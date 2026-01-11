@@ -5,6 +5,8 @@ import com.smartrecipe.recipe.RecipeCache;
 import com.smartrecipe.screen.SmartRecipeBookScreen;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ingame.CraftingScreen;
+import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.gui.screen.ingame.RecipeBookScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import org.spongepowered.asm.mixin.Mixin;
@@ -15,6 +17,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Mixin to intercept when the recipe book button is clicked.
  * Opens our custom SmartRecipeBookScreen instead of the vanilla recipe book widget.
+ * Only applies to crafting screens (inventory and crafting table), not furnaces.
  */
 @Mixin(RecipeBookScreen.class)
 public abstract class RecipeBookScreenMixin {
@@ -30,6 +33,13 @@ public abstract class RecipeBookScreenMixin {
 	)
 	private void onRecipeBookButtonClick(ButtonWidget button, CallbackInfo ci) {
 		MinecraftClient client = MinecraftClient.getInstance();
+
+		// Only intercept for crafting screens (inventory and crafting table)
+		// Let furnaces, blast furnaces, smokers use vanilla recipe book
+		if (!(client.currentScreen instanceof InventoryScreen) &&
+			!(client.currentScreen instanceof CraftingScreen)) {
+			return; // Not a crafting screen, let vanilla handle it
+		}
 
 		// Only intercept if we have recipes in our cache
 		if (!RecipeCache.hasRecipes()) {
