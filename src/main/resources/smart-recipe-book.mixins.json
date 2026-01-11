@@ -1,0 +1,21 @@
+{
+	"required": true,
+	"package": "com.smartrecipe.mixin",
+	"minVersion": "0.8",
+	"compatibilityLevel": "JAVA_21",
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"mixins": [
+		"ServerRecipeManagerAccessor"
+	],
+	"client": [
+		"RecipeBookWidgetMixin",
+		"RecipeBookWidgetAccessor",
+		"ClientPlayNetworkHandlerMixin",
+		"RecipeResultCollectionMixin",
+		"ClientRecipeBookMixin",
+		"RecipeBookScreenMixin",
+		"RecipeToastMixin"
+	]
+}
