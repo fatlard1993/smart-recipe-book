@@ -18,6 +18,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.recipe.NetworkRecipeId;
 import net.minecraft.recipe.RecipeDisplayEntry;
+import net.minecraft.recipe.display.FurnaceRecipeDisplay;
 import net.minecraft.recipe.display.RecipeDisplay;
 import net.minecraft.recipe.display.ShapedCraftingRecipeDisplay;
 import net.minecraft.recipe.display.ShapelessCraftingRecipeDisplay;
@@ -47,9 +48,10 @@ public class SmartRecipeBookScreen extends Screen {
 	// Screen state
 	private final Screen parent;
 	private final int craftingGridSize; // 2 for 2x2 inventory, 3 for 3x3 crafting table
+	private final RecipeMode recipeMode; // CRAFTING or FURNACE
 	private int currentPage = 0;
 	private List<RecipeDisplayEntry> displayedRecipes = new ArrayList<>();
-	private List<RecipeDisplayEntry> allCraftingRecipes = new ArrayList<>();
+	private List<RecipeDisplayEntry> allRecipes = new ArrayList<>();
 	private String searchQuery = "";
 	private Map<Item, Integer> playerInventory = new HashMap<>();
 
@@ -66,17 +68,43 @@ public class SmartRecipeBookScreen extends Screen {
 
 
 	public SmartRecipeBookScreen(Screen parent) {
+		this(parent, RecipeMode.CRAFTING);
+	}
+
+	public SmartRecipeBookScreen(Screen parent, RecipeMode mode) {
 		super(Text.literal("Smart Recipe Book"));
 		this.parent = parent;
+		this.recipeMode = mode;
 
-		// Determine crafting grid size from parent screen
+		// Determine crafting grid size from parent screen (only relevant for crafting mode)
+		this.craftingGridSize = mode == RecipeMode.CRAFTING ? detectCraftingGridSize(parent) : 1;
+	}
+
+	/**
+	 * Detect the crafting grid size based on the parent screen type.
+	 * Uses class name matching to support mod screens without hard dependencies.
+	 */
+	private static int detectCraftingGridSize(Screen parent) {
+		if (parent == null) return 2;
+
+		// Check vanilla screens first
 		if (parent instanceof CraftingScreen) {
-			this.craftingGridSize = 3; // 3x3 crafting table
-		} else {
-			this.craftingGridSize = 2; // 2x2 inventory crafting
+			return 3; // 3x3 crafting table
 		}
 
-		SmartRecipeBookMod.LOGGER.info("SmartRecipeBookScreen opened with {}x{} grid", craftingGridSize, craftingGridSize);
+		// Check by class name for mod compatibility (avoids circular dependencies)
+		String className = parent.getClass().getSimpleName();
+
+		// Backpack Inventory mod screens
+		if (className.equals("BackpackCraftingScreen")) {
+			return 3; // 3x3 crafting table equivalent
+		}
+		if (className.equals("BackpackInventoryScreen")) {
+			return 2; // 2x2 inventory crafting equivalent
+		}
+
+		// Default to 2x2 for inventory-style screens
+		return 2;
 	}
 
 	@Override
@@ -141,9 +169,21 @@ public class SmartRecipeBookScreen extends Screen {
 		// Ensure recipes are loaded (will load from integrated server in singleplayer)
 		RecipeCache.ensureLoaded();
 
-		// Get all crafting recipes from our cache
-		allCraftingRecipes = RecipeCache.getCraftingRecipes();
-		SmartRecipeBookMod.LOGGER.info("SmartRecipeBookScreen: loaded {} crafting recipes", allCraftingRecipes.size());
+		// Get recipes based on mode
+		switch (recipeMode) {
+			case FURNACE:
+				allRecipes = RecipeCache.getRegularFurnaceRecipes();
+				break;
+			case BLAST_FURNACE:
+				allRecipes = RecipeCache.getBlastFurnaceRecipes();
+				break;
+			case SMOKER:
+				allRecipes = RecipeCache.getSmokerRecipes();
+				break;
+			default:
+				allRecipes = RecipeCache.getCraftingRecipes();
+				break;
+		}
 	}
 
 	/**
@@ -186,9 +226,9 @@ public class SmartRecipeBookScreen extends Screen {
 		// Track seen items to deduplicate (show one recipe per result item)
 		Set<Item> seenItems = new HashSet<>();
 
-		for (RecipeDisplayEntry entry : allCraftingRecipes) {
-			// Check if recipe fits current crafting grid
-			if (!fitsInGrid(entry)) {
+		for (RecipeDisplayEntry entry : allRecipes) {
+			// Check if recipe fits current crafting grid (only for crafting mode)
+			if (recipeMode == RecipeMode.CRAFTING && !fitsInGrid(entry)) {
 				continue;
 			}
 
@@ -214,23 +254,8 @@ public class SmartRecipeBookScreen extends Screen {
 			displayedRecipes.add(entry);
 		}
 
-		// Sort by vanilla craft statistics (most crafted first)
+		// Sort by craft statistics (most crafted first)
 		final ContextParameterMap sortContext = contextParams;
-
-		// Debug: check a few items' stats before sorting
-		int itemsWithStats = 0;
-		for (RecipeDisplayEntry entry : displayedRecipes) {
-			Item item = entry.getStacks(sortContext).get(0).getItem();
-			int count = getCraftedCount(item);
-			if (count > 0) {
-				itemsWithStats++;
-				if (itemsWithStats <= 5) {
-					SmartRecipeBookMod.LOGGER.info("Stats found: {} = {}", item.getName().getString(), count);
-				}
-			}
-		}
-		SmartRecipeBookMod.LOGGER.info("Total items with stats > 0: {}", itemsWithStats);
-
 		displayedRecipes.sort((a, b) -> {
 			Item itemA = a.getStacks(sortContext).get(0).getItem();
 			Item itemB = b.getStacks(sortContext).get(0).getItem();
@@ -238,17 +263,6 @@ public class SmartRecipeBookScreen extends Screen {
 			int countB = getCraftedCount(itemB);
 			return Integer.compare(countB, countA); // Descending order
 		});
-
-		// Debug: show first 5 items after sorting
-		SmartRecipeBookMod.LOGGER.info("After sorting - first 5 items:");
-		for (int i = 0; i < Math.min(5, displayedRecipes.size()); i++) {
-			Item item = displayedRecipes.get(i).getStacks(sortContext).get(0).getItem();
-			int count = getCraftedCount(item);
-			SmartRecipeBookMod.LOGGER.info("  {}: {} (count={})", i + 1, item.getName().getString(), count);
-		}
-
-		SmartRecipeBookMod.LOGGER.info("Showing {} unique recipes for {}x{} grid",
-			displayedRecipes.size(), craftingGridSize, craftingGridSize);
 
 		// Update page navigation
 		updatePageButtons();
@@ -341,6 +355,32 @@ public class SmartRecipeBookScreen extends Screen {
 		return true;
 	}
 
+	/**
+	 * Check if we have the ingredient for a furnace recipe
+	 */
+	private boolean canSmeltRecipe(RecipeDisplayEntry entry, ContextParameterMap contextParams) {
+		RecipeDisplay display = entry.display();
+
+		if (!(display instanceof FurnaceRecipeDisplay furnaceDisplay)) {
+			return false;
+		}
+
+		// Get the ingredient slot
+		List<ItemStack> possibleIngredients = furnaceDisplay.ingredient().getStacks(contextParams);
+		if (possibleIngredients.isEmpty()) return false;
+
+		// Check if we have any of the possible ingredients
+		for (ItemStack stack : possibleIngredients) {
+			if (stack.isEmpty()) continue;
+			int have = playerInventory.getOrDefault(stack.getItem(), 0);
+			if (have > 0) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	private void updatePageButtons() {
 		int totalPages = (displayedRecipes.size() + RECIPES_PER_PAGE - 1) / RECIPES_PER_PAGE;
 		if (totalPages == 0) totalPages = 1;
@@ -381,10 +421,15 @@ public class SmartRecipeBookScreen extends Screen {
 		int gridY = 50;
 
 		// Draw title
-		String gridLabel = craftingGridSize == 3 ? "3x3 Crafting Table" : "2x2 Inventory";
+		String modeLabel;
+		if (recipeMode.isFurnaceType()) {
+			modeLabel = recipeMode.getDisplayName();
+		} else {
+			modeLabel = craftingGridSize == 3 ? "3x3 Crafting Table" : "2x2 Inventory";
+		}
 		context.drawCenteredTextWithShadow(
 			this.textRenderer,
-			Text.literal("Recipes - " + gridLabel + " (" + displayedRecipes.size() + ")"),
+			Text.literal("Recipes - " + modeLabel + " (" + displayedRecipes.size() + ")"),
 			this.width / 2,
 			8,
 			0xFFFFFF
@@ -457,23 +502,33 @@ public class SmartRecipeBookScreen extends Screen {
 				List<Text> tooltip = new ArrayList<>();
 				tooltip.add(results.get(0).getName());
 
-				boolean directlyCraftable = canCraftRecipeDirect(hoveredRecipe, contextParams);
-				if (directlyCraftable) {
-					tooltip.add(Text.literal("§a✓ Can craft now").styled(s -> s));
-				} else {
-					// Check if craftable with sub-crafting (lazy evaluation)
-					Boolean cached = craftabilityCache.get(hoveredRecipe.id());
-					if (cached == null) {
-						// Calculate on hover
-						CraftingPlan plan = RecipeTreeCalculator.calculatePlan(client, hoveredRecipe.id());
-						cached = plan != null && plan.canCraft();
-						craftabilityCache.put(hoveredRecipe.id(), cached);
-					}
-
-					if (cached) {
-						tooltip.add(Text.literal("§e⚡ Requires sub-crafting").styled(s -> s));
+				if (recipeMode.isFurnaceType()) {
+					// For furnace recipes, just check if we have the ingredient
+					boolean hasIngredient = canSmeltRecipe(hoveredRecipe, contextParams);
+					if (hasIngredient) {
+						tooltip.add(Text.literal("§a✓ Can smelt now").styled(s -> s));
 					} else {
-						tooltip.add(Text.literal("§c✗ Missing materials").styled(s -> s));
+						tooltip.add(Text.literal("§c✗ Missing ingredient").styled(s -> s));
+					}
+				} else {
+					boolean directlyCraftable = canCraftRecipeDirect(hoveredRecipe, contextParams);
+					if (directlyCraftable) {
+						tooltip.add(Text.literal("§a✓ Can craft now").styled(s -> s));
+					} else {
+						// Check if craftable with sub-crafting (lazy evaluation)
+						Boolean cached = craftabilityCache.get(hoveredRecipe.id());
+						if (cached == null) {
+							// Calculate on hover
+							CraftingPlan plan = RecipeTreeCalculator.calculatePlan(client, hoveredRecipe.id());
+							cached = plan != null && plan.canCraft();
+							craftabilityCache.put(hoveredRecipe.id(), cached);
+						}
+
+						if (cached) {
+							tooltip.add(Text.literal("§e⚡ Requires sub-crafting").styled(s -> s));
+						} else {
+							tooltip.add(Text.literal("§c✗ Missing materials").styled(s -> s));
+						}
 					}
 				}
 
@@ -500,9 +555,7 @@ public class SmartRecipeBookScreen extends Screen {
 	private void craftRecipe(RecipeDisplayEntry entry) {
 		if (client == null) return;
 
-		SmartRecipeBookMod.LOGGER.info("Opening recipe preview for: {}", entry.id());
-
-		// Open recipe preview screen
+		// Open recipe preview screen (works for both crafting and furnace recipes)
 		client.setScreen(new RecipePreviewScreen(this, entry));
 	}
 

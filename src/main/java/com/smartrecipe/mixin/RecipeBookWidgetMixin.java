@@ -35,7 +35,6 @@ public abstract class RecipeBookWidgetMixin {
 	private void onRecipeSelect(RecipeResultCollection results, NetworkRecipeId recipeId, boolean craftAll, CallbackInfoReturnable<Boolean> cir) {
 		// Skip intercept if we're executing our own plan
 		if (VanillaCraftingHelper.isExecutingPlan()) {
-			SmartRecipeBookMod.LOGGER.info("Executing plan step via vanilla: {}", recipeId);
 			return; // Let vanilla handle it
 		}
 
@@ -51,12 +50,8 @@ public abstract class RecipeBookWidgetMixin {
 
 		// Only intercept if we need to craft sub-components
 		if (!plan.requiresSubCrafting()) {
-			// Single step, let vanilla handle it normally
-			SmartRecipeBookMod.LOGGER.info("Single step recipe, letting vanilla handle");
 			return;
 		}
-
-		SmartRecipeBookMod.LOGGER.info("Recipe requires sub-crafting: {} steps", plan.getSteps().size());
 
 		// Check if there are multiple recipe choices
 		if (plan.hasRecipeChoices()) {

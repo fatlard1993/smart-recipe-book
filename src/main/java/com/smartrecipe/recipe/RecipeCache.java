@@ -10,6 +10,8 @@ import net.minecraft.recipe.NetworkRecipeId;
 import net.minecraft.recipe.RecipeDisplayEntry;
 import net.minecraft.recipe.ServerRecipeManager;
 import net.minecraft.recipe.book.RecipeBookCategory;
+import net.minecraft.recipe.book.RecipeBookCategories;
+import net.minecraft.recipe.display.FurnaceRecipeDisplay;
 import net.minecraft.recipe.display.RecipeDisplay;
 import net.minecraft.recipe.display.ShapedCraftingRecipeDisplay;
 import net.minecraft.recipe.display.ShapelessCraftingRecipeDisplay;
@@ -44,7 +46,6 @@ public class RecipeCache {
 	 * Clear all cached recipes (called when joining a new world)
 	 */
 	public static void clear() {
-		SmartRecipeBookMod.LOGGER.info("RecipeCache cleared");
 		recipes.clear();
 		recipesByResult.clear();
 		cachedCollections = null;
@@ -67,7 +68,6 @@ public class RecipeCache {
 		for (RecipeDisplayEntry entry : entries) {
 			recipes.put(entry.id(), entry);
 		}
-		SmartRecipeBookMod.LOGGER.info("RecipeCache: Added {} recipes, total now: {}", entries.size(), recipes.size());
 		invalidateCache();
 	}
 
@@ -254,6 +254,130 @@ public class RecipeCache {
 	}
 
 	/**
+	 * Get all furnace recipes (smelting, blasting, smoking)
+	 */
+	public static List<RecipeDisplayEntry> getFurnaceRecipes() {
+		return recipes.values().stream()
+			.filter(entry -> {
+				RecipeDisplay display = entry.display();
+				return display instanceof FurnaceRecipeDisplay;
+			})
+			.collect(Collectors.toList());
+	}
+
+	/**
+	 * Get furnace recipes filtered by category prefix.
+	 * Categories in Minecraft are like FURNACE_FOOD, BLAST_FURNACE_BLOCKS, SMOKER_FOOD, etc.
+	 */
+	public static List<RecipeDisplayEntry> getFurnaceRecipesByCategory(String categoryPrefix) {
+		return recipes.values().stream()
+			.filter(entry -> {
+				RecipeDisplay display = entry.display();
+				if (!(display instanceof FurnaceRecipeDisplay)) return false;
+
+				// Check if the category name starts with the prefix
+				String categoryName = entry.category().toString();
+				return categoryName.startsWith(categoryPrefix);
+			})
+			.collect(Collectors.toList());
+	}
+
+	/**
+	 * Get recipes for regular furnace (all smelting categories)
+	 */
+	public static List<RecipeDisplayEntry> getRegularFurnaceRecipes() {
+		return recipes.values().stream()
+			.filter(entry -> {
+				RecipeDisplay display = entry.display();
+				if (!(display instanceof FurnaceRecipeDisplay)) return false;
+
+				// Regular furnace accepts FURNACE_*, but also can do what blast furnace and smoker do
+				// So we show ALL furnace recipes for the regular furnace
+				return true;
+			})
+			.collect(Collectors.toList());
+	}
+
+	/**
+	 * Get recipes for blast furnace (ores and metals only)
+	 */
+	public static List<RecipeDisplayEntry> getBlastFurnaceRecipes() {
+		List<RecipeDisplayEntry> result = new ArrayList<>();
+
+		// Get the blast furnace categories from RecipeBookCategories
+		RecipeBookCategory blastFurnaceBlocks = RecipeBookCategories.BLAST_FURNACE_BLOCKS;
+		RecipeBookCategory blastFurnaceMisc = RecipeBookCategories.BLAST_FURNACE_MISC;
+
+		for (RecipeDisplayEntry entry : recipes.values()) {
+			RecipeDisplay display = entry.display();
+			if (!(display instanceof FurnaceRecipeDisplay)) continue;
+
+			RecipeBookCategory category = entry.category();
+			if (category == blastFurnaceBlocks || category == blastFurnaceMisc) {
+				result.add(entry);
+			}
+		}
+
+		return result;
+	}
+
+	/**
+	 * Get recipes for smoker (food only)
+	 */
+	public static List<RecipeDisplayEntry> getSmokerRecipes() {
+		List<RecipeDisplayEntry> result = new ArrayList<>();
+
+		// Get the smoker category from RecipeBookCategories
+		RecipeBookCategory smokerFood = RecipeBookCategories.SMOKER_FOOD;
+
+		for (RecipeDisplayEntry entry : recipes.values()) {
+			RecipeDisplay display = entry.display();
+			if (!(display instanceof FurnaceRecipeDisplay)) continue;
+
+			RecipeBookCategory category = entry.category();
+			if (category == smokerFood) {
+				result.add(entry);
+			}
+		}
+
+		return result;
+	}
+
+	/**
+	 * Find a furnace recipe that produces the given item
+	 */
+	public static RecipeDisplayEntry findFurnaceRecipeForItem(Item item, World world) {
+		List<RecipeDisplayEntry> candidates = findRecipesForItem(item, world);
+
+		// Return first furnace recipe found
+		for (RecipeDisplayEntry entry : candidates) {
+			RecipeDisplay display = entry.display();
+			if (display instanceof FurnaceRecipeDisplay) {
+				return entry;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Find ALL furnace recipes that produce the given item
+	 */
+	public static List<RecipeDisplayEntry> findAllFurnaceRecipesForItem(Item item, World world) {
+		List<RecipeDisplayEntry> candidates = findRecipesForItem(item, world);
+		List<RecipeDisplayEntry> furnaceRecipes = new ArrayList<>();
+
+		for (RecipeDisplayEntry entry : candidates) {
+			RecipeDisplay display = entry.display();
+			if (display instanceof FurnaceRecipeDisplay) {
+				furnaceRecipes.add(entry);
+			}
+		}
+
+		return furnaceRecipes;
+	}
+
+	/**
 	 * Debug: print cache statistics
 	 */
 	public static void logStats() {
@@ -277,26 +401,16 @@ public class RecipeCache {
 	public static void loadFromIntegratedServer() {
 		MinecraftClient client = MinecraftClient.getInstance();
 
-		SmartRecipeBookMod.LOGGER.info("Attempting to load from integrated server...");
-
 		if (client.getServer() == null) {
-			SmartRecipeBookMod.LOGGER.info("No integrated server available (multiplayer or not yet loaded)");
 			return;
 		}
 
 		try {
 			ServerRecipeManager recipeManager = client.getServer().getRecipeManager();
-			SmartRecipeBookMod.LOGGER.info("Got recipe manager: {}", recipeManager);
-
 			ServerRecipeManagerAccessor accessor = (ServerRecipeManagerAccessor) recipeManager;
 			List<ServerRecipeManager.ServerRecipe> serverRecipes = accessor.getRecipes();
 
-			SmartRecipeBookMod.LOGGER.info("Server recipes list: {} (size: {})",
-				serverRecipes != null ? "not null" : "null",
-				serverRecipes != null ? serverRecipes.size() : 0);
-
 			if (serverRecipes == null || serverRecipes.isEmpty()) {
-				SmartRecipeBookMod.LOGGER.warn("Server recipe list is empty - recipes may not be initialized yet");
 				return;
 			}
 
@@ -308,8 +422,6 @@ public class RecipeCache {
 			}
 
 			invalidateCache();
-
-			SmartRecipeBookMod.LOGGER.info("Successfully loaded {} recipes from integrated server", recipes.size());
 		} catch (Exception e) {
 			SmartRecipeBookMod.LOGGER.error("Failed to load recipes from integrated server", e);
 		}
@@ -319,14 +431,11 @@ public class RecipeCache {
 	 * Ensure recipes are loaded, loading from server if needed
 	 */
 	public static void ensureLoaded() {
-		SmartRecipeBookMod.LOGGER.info("ensureLoaded called - current recipes: {}, loadedFromServer: {}",
-			recipes.size(), loadedFromServer);
-
-		// Always try to load from integrated server if we haven't yet
+		// Try to load from integrated server if we haven't yet
 		// (the packet-captured recipes are only unlocked ones)
 		if (!loadedFromServer) {
 			loadFromIntegratedServer();
-			if (recipes.size() > 100) { // Assume success if we got a good number
+			if (recipes.size() > 100) {
 				loadedFromServer = true;
 			}
 		}

@@ -14,6 +14,7 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.recipe.RecipeDisplayEntry;
+import net.minecraft.recipe.display.FurnaceRecipeDisplay;
 import net.minecraft.recipe.display.RecipeDisplay;
 import net.minecraft.recipe.display.ShapedCraftingRecipeDisplay;
 import net.minecraft.recipe.display.ShapelessCraftingRecipeDisplay;
@@ -35,6 +36,7 @@ public class RecipePreviewScreen extends Screen {
 	private final ItemStack resultStack;
 	private final Map<Item, Integer> playerInventory;
 	private final int craftingGridSize; // 2 for inventory, 3 for crafting table
+	private final boolean isFurnaceRecipe;
 
 	private CraftingPlan craftingPlan;
 	private boolean canCraft = false;
@@ -75,13 +77,21 @@ public class RecipePreviewScreen extends Screen {
 	private SlotInfo resultSlot = null;
 	private SlotInfo hoveredSlot = null;
 
+	// Scroll state for furnace recipes with many ingredients
+	private int ingredientScrollOffset = 0;
+	private int maxVisibleIngredientRows = 3;
+	private int totalIngredientRows = 0;
+
 	public RecipePreviewScreen(Screen parent, RecipeDisplayEntry recipe) {
 		super(Text.literal("Recipe Preview"));
 		this.parent = parent;
 		this.recipe = recipe;
 
-		// Determine crafting grid size from parent chain
-		this.craftingGridSize = determineCraftingGridSize(parent);
+		// Check if this is a furnace recipe
+		this.isFurnaceRecipe = recipe.display() instanceof FurnaceRecipeDisplay;
+
+		// Determine crafting grid size from parent chain (only relevant for crafting)
+		this.craftingGridSize = isFurnaceRecipe ? 1 : determineCraftingGridSize(parent);
 
 		// Get result stack
 		MinecraftClient client = MinecraftClient.getInstance();
@@ -136,27 +146,37 @@ public class RecipePreviewScreen extends Screen {
 		int panelX = (this.width - PANEL_WIDTH) / 2;
 		int panelY = (this.height - PANEL_HEIGHT) / 2;
 
-		// Quantity controls
+		// Quantity controls (only for crafting recipes)
 		int quantityY = panelY + PANEL_HEIGHT - 60;
 
-		minusButton = ButtonWidget.builder(
-			Text.literal("-"),
-			button -> adjustQuantity(-1)
-		).dimensions(panelX + 50, quantityY, 20, 20).build();
-		this.addDrawableChild(minusButton);
+		if (!isFurnaceRecipe) {
+			minusButton = ButtonWidget.builder(
+				Text.literal("-"),
+				button -> adjustQuantity(-1)
+			).dimensions(panelX + 50, quantityY, 20, 20).build();
+			this.addDrawableChild(minusButton);
 
-		plusButton = ButtonWidget.builder(
-			Text.literal("+"),
-			button -> adjustQuantity(1)
-		).dimensions(panelX + 130, quantityY, 20, 20).build();
-		this.addDrawableChild(plusButton);
+			plusButton = ButtonWidget.builder(
+				Text.literal("+"),
+				button -> adjustQuantity(1)
+			).dimensions(panelX + 130, quantityY, 20, 20).build();
+			this.addDrawableChild(plusButton);
+		}
 
-		// Craft button
-		craftButton = ButtonWidget.builder(
-			Text.literal("Craft"),
-			button -> craftRecipe()
-		).dimensions(panelX + 10, panelY + PANEL_HEIGHT - 30, 95, 20).build();
-		craftButton.active = canCraft;
+		// Craft/Close button
+		if (isFurnaceRecipe) {
+			// For furnace recipes, just show a close button (can't auto-smelt)
+			craftButton = ButtonWidget.builder(
+				Text.literal("Close"),
+				button -> close()
+			).dimensions(panelX + 10, panelY + PANEL_HEIGHT - 30, 95, 20).build();
+		} else {
+			craftButton = ButtonWidget.builder(
+				Text.literal("Craft"),
+				button -> craftRecipe()
+			).dimensions(panelX + 10, panelY + PANEL_HEIGHT - 30, 95, 20).build();
+			craftButton.active = canCraft;
+		}
 		this.addDrawableChild(craftButton);
 
 		// Cancel button
@@ -175,8 +195,12 @@ public class RecipePreviewScreen extends Screen {
 	}
 
 	private void updateQuantityButtons() {
-		minusButton.active = craftQuantity > 1;
-		plusButton.active = craftQuantity < maxCraftable && canCraft;
+		if (minusButton != null) {
+			minusButton.active = craftQuantity > 1;
+		}
+		if (plusButton != null) {
+			plusButton.active = craftQuantity < maxCraftable && canCraft;
+		}
 	}
 
 	private void calculateCraftability() {
@@ -184,12 +208,35 @@ public class RecipePreviewScreen extends Screen {
 
 		ContextParameterMap contextParams = SlotDisplayContexts.createParameters(client.world);
 
-		// Check direct craftability
-		canCraftDirect = canCraftRecipeDirect(contextParams);
+		if (isFurnaceRecipe) {
+			// For furnace recipes, just check if we have the ingredient
+			canCraftDirect = hasSmeltingIngredient(contextParams);
+			canCraft = canCraftDirect;
+			craftingPlan = null;
+		} else {
+			// Check direct craftability
+			canCraftDirect = canCraftRecipeDirect(contextParams);
 
-		// Calculate full plan for recursive craftability
-		craftingPlan = RecipeTreeCalculator.calculatePlan(client, recipe.id());
-		canCraft = craftingPlan != null && craftingPlan.canCraft();
+			// Calculate full plan for recursive craftability
+			craftingPlan = RecipeTreeCalculator.calculatePlan(client, recipe.id());
+			canCraft = craftingPlan != null && craftingPlan.canCraft();
+		}
+	}
+
+	private boolean hasSmeltingIngredient(ContextParameterMap contextParams) {
+		RecipeDisplay display = recipe.display();
+		if (!(display instanceof FurnaceRecipeDisplay furnaceDisplay)) {
+			return false;
+		}
+
+		// Check if we have ANY of the possible ingredients
+		List<ItemStack> possibleIngredients = furnaceDisplay.ingredient().getStacks(contextParams);
+		for (ItemStack stack : possibleIngredients) {
+			if (!stack.isEmpty() && playerInventory.getOrDefault(stack.getItem(), 0) > 0) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private void calculateMaxCraftable() {
@@ -269,20 +316,22 @@ public class RecipePreviewScreen extends Screen {
 		// Draw crafting grid preview (pass mouse coords for hover detection)
 		drawCraftingGrid(context, panelX, panelY + 25, mouseX, mouseY);
 
-		// Draw quantity display (replaces craftability status)
-		String quantityText = "Quantity: " + craftQuantity;
-		if (maxCraftable > 1) {
-			quantityText += " / " + maxCraftable;
-		}
-		int quantityColor = canCraft ? 0xFF44FF44 : 0xFFFF4444;
+		// Draw quantity display (only for crafting recipes)
+		if (!isFurnaceRecipe) {
+			String quantityText = "Quantity: " + craftQuantity;
+			if (maxCraftable > 1) {
+				quantityText += " / " + maxCraftable;
+			}
+			int quantityColor = canCraft ? 0xFF44FF44 : 0xFFFF4444;
 
-		context.drawCenteredTextWithShadow(
-			this.textRenderer,
-			Text.literal(quantityText),
-			panelX + PANEL_WIDTH / 2,
-			panelY + 105,
-			quantityColor
-		);
+			context.drawCenteredTextWithShadow(
+				this.textRenderer,
+				Text.literal(quantityText),
+				panelX + PANEL_WIDTH / 2,
+				panelY + 105,
+				quantityColor
+			);
+		}
 
 		// Draw buttons
 		super.render(context, mouseX, mouseY, delta);
@@ -307,7 +356,11 @@ public class RecipePreviewScreen extends Screen {
 
 			// Show if clickable (has recipe)
 			if (hoveredSlot.recipe != null) {
-				tooltip.add(Text.literal("§b[Click to view recipe]"));
+				if (isFurnaceRecipe) {
+					tooltip.add(Text.literal("§b[Click to see how to smelt this]"));
+				} else {
+					tooltip.add(Text.literal("§b[Click to view recipe]"));
+				}
 			}
 
 			context.drawTooltip(this.textRenderer, tooltip, mouseX, mouseY);
@@ -324,6 +377,12 @@ public class RecipePreviewScreen extends Screen {
 
 		ContextParameterMap contextParams = SlotDisplayContexts.createParameters(client.world);
 		RecipeDisplay display = recipe.display();
+
+		// Handle furnace recipes separately
+		if (display instanceof FurnaceRecipeDisplay furnaceDisplay) {
+			drawFurnaceRecipe(context, panelX, startY, mouseX, mouseY, furnaceDisplay, contextParams);
+			return;
+		}
 
 		int gridWidth, gridHeight;
 		List<SlotDisplay> displaySlots;
@@ -447,6 +506,206 @@ public class RecipePreviewScreen extends Screen {
 	}
 
 	/**
+	 * Draw furnace recipe showing all possible ingredients → result
+	 * Collects ingredients from ALL furnace recipes that produce this result
+	 */
+	private void drawFurnaceRecipe(DrawContext context, int panelX, int startY, int mouseX, int mouseY,
+								   FurnaceRecipeDisplay furnaceDisplay, ContextParameterMap contextParams) {
+		// Find ALL furnace recipes that produce this result and collect their ingredients
+		List<ItemStack> allIngredients = new ArrayList<>();
+		Set<Item> seenItems = new HashSet<>();
+
+		// Get all furnace recipes that produce the same result
+		List<RecipeDisplayEntry> allFurnaceRecipes = RecipeCache.findAllFurnaceRecipesForItem(
+			resultStack.getItem(), client.world);
+
+		// Collect all unique ingredients from all matching recipes
+		for (RecipeDisplayEntry entry : allFurnaceRecipes) {
+			if (entry.display() instanceof FurnaceRecipeDisplay fd) {
+				for (ItemStack stack : fd.ingredient().getStacks(contextParams)) {
+					if (!stack.isEmpty() && !seenItems.contains(stack.getItem())) {
+						seenItems.add(stack.getItem());
+						allIngredients.add(stack);
+					}
+				}
+			}
+		}
+
+		// Fallback to current recipe's ingredients if no recipes found
+		if (allIngredients.isEmpty()) {
+			for (ItemStack stack : furnaceDisplay.ingredient().getStacks(contextParams)) {
+				if (!stack.isEmpty() && !seenItems.contains(stack.getItem())) {
+					seenItems.add(stack.getItem());
+					allIngredients.add(stack);
+				}
+			}
+		}
+
+		if (allIngredients.isEmpty()) return;
+
+		// Calculate layout based on number of ingredients
+		int ingredientCount = allIngredients.size();
+		int ingredientsPerRow = 4; // Always 4 per row for consistency
+		totalIngredientRows = (ingredientCount + ingredientsPerRow - 1) / ingredientsPerRow;
+
+		// Clamp scroll offset
+		int maxScrollOffset = Math.max(0, totalIngredientRows - maxVisibleIngredientRows);
+		ingredientScrollOffset = Math.max(0, Math.min(ingredientScrollOffset, maxScrollOffset));
+
+		// Layout dimensions (only show visible rows)
+		int visibleRows = Math.min(totalIngredientRows, maxVisibleIngredientRows);
+		int ingredientGridWidth = ingredientsPerRow * (SLOT_SIZE + 2);
+		int ingredientGridHeight = visibleRows * (SLOT_SIZE + 2);
+
+		// Center the layout
+		int totalWidth = ingredientGridWidth + 25 + 20 + 25 + SLOT_SIZE; // ingredients + arrow + fire + arrow + result
+		int startX = panelX + (PANEL_WIDTH - totalWidth) / 2;
+		int baseY = startY + 10;
+
+		// Draw scroll indicators if needed
+		boolean canScrollUp = ingredientScrollOffset > 0;
+		boolean canScrollDown = ingredientScrollOffset < maxScrollOffset;
+
+		if (canScrollUp) {
+			context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("▲ scroll"),
+				startX + ingredientGridWidth / 2, baseY - 12, 0xFFAAAA00);
+		}
+		if (canScrollDown) {
+			context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("▼ scroll"),
+				startX + ingredientGridWidth / 2, baseY + ingredientGridHeight + 2, 0xFFAAAA00);
+		}
+
+		// Draw visible ingredient slots
+		boolean hasAnyIngredient = false;
+		int startIndex = ingredientScrollOffset * ingredientsPerRow;
+		int endIndex = Math.min(allIngredients.size(), startIndex + (maxVisibleIngredientRows * ingredientsPerRow));
+
+		for (int i = startIndex; i < endIndex; i++) {
+			int visibleIndex = i - startIndex;
+			int row = visibleIndex / ingredientsPerRow;
+			int col = visibleIndex % ingredientsPerRow;
+
+			int slotX = startX + col * (SLOT_SIZE + 2);
+			int slotY = baseY + row * (SLOT_SIZE + 2);
+
+			ItemStack ingredientStack = allIngredients.get(i);
+
+			// Draw slot background
+			context.fill(slotX, slotY, slotX + SLOT_SIZE, slotY + SLOT_SIZE, 0xFF3A3A3A);
+
+			// Track this slot
+			SlotInfo slotInfo = new SlotInfo(slotX, slotY, ingredientStack);
+
+			// Find FURNACE recipe for ingredient (to enable click navigation to other smelting recipes)
+			RecipeDisplayEntry itemRecipe = findFurnaceRecipeForItem(ingredientStack.getItem(), contextParams);
+			if (itemRecipe != null) {
+				slotInfo.recipe = itemRecipe;
+			}
+			ingredientSlots.add(slotInfo);
+
+			// Check if hovering
+			boolean hovered = mouseX >= slotX && mouseX < slotX + SLOT_SIZE &&
+							  mouseY >= slotY && mouseY < slotY + SLOT_SIZE;
+			if (hovered) {
+				hoveredSlot = slotInfo;
+			}
+
+			// Check if player has ingredient
+			int have = playerInventory.getOrDefault(ingredientStack.getItem(), 0);
+			boolean hasIngredient = have > 0;
+			if (hasIngredient) hasAnyIngredient = true;
+
+			// Draw item
+			context.drawItem(ingredientStack, slotX + 1, slotY + 1);
+
+			// Draw overlay based on status
+			if (!hasIngredient) {
+				if (slotInfo.recipe != null) {
+					// Can be smelted from something - yellow overlay
+					context.fill(slotX, slotY, slotX + SLOT_SIZE, slotY + SLOT_SIZE, 0x40FFAA00);
+				} else {
+					// Missing and no furnace recipe - red overlay
+					context.fill(slotX, slotY, slotX + SLOT_SIZE, slotY + SLOT_SIZE, 0x40FF4444);
+				}
+			}
+		}
+
+		// Also check items not currently visible for "hasAnyIngredient" status
+		for (ItemStack stack : allIngredients) {
+			if (playerInventory.getOrDefault(stack.getItem(), 0) > 0) {
+				hasAnyIngredient = true;
+				break;
+			}
+		}
+
+		// Calculate vertical center of ingredient grid
+		int ingredientCenterY = baseY + ingredientGridHeight / 2;
+
+		// Draw first arrow
+		int arrow1X = startX + ingredientGridWidth + 5;
+		context.drawTextWithShadow(this.textRenderer, Text.literal("→"), arrow1X, ingredientCenterY - 4, 0xFFFFFF);
+
+		// Draw fire icon (represents smelting)
+		int fireX = arrow1X + 18;
+		context.drawTextWithShadow(this.textRenderer, Text.literal("🔥"), fireX, ingredientCenterY - 4, 0xFFAA00);
+
+		// Draw second arrow
+		int arrow2X = fireX + 18;
+		context.drawTextWithShadow(this.textRenderer, Text.literal("→"), arrow2X, ingredientCenterY - 4, 0xFFFFFF);
+
+		// Draw result slot (vertically centered with ingredients)
+		int resultX = arrow2X + 18;
+		int resultY = ingredientCenterY - SLOT_SIZE / 2;
+
+		// Track result slot
+		resultSlot = new SlotInfo(resultX, resultY, resultStack);
+
+		// Check if hovering result
+		boolean resultHovered = mouseX >= resultX && mouseX < resultX + SLOT_SIZE &&
+								mouseY >= resultY && mouseY < resultY + SLOT_SIZE;
+		if (resultHovered) {
+			hoveredSlot = resultSlot;
+		}
+
+		// Result background (highlighted)
+		context.fill(resultX - 2, resultY - 2, resultX + SLOT_SIZE + 2, resultY + SLOT_SIZE + 2, 0xFF4A4A4A);
+		context.fill(resultX, resultY, resultX + SLOT_SIZE, resultY + SLOT_SIZE, 0xFF3A3A3A);
+
+		// Draw result item
+		context.drawItem(resultStack, resultX + 1, resultY + 1);
+		if (resultStack.getCount() > 1) {
+			context.drawStackOverlay(this.textRenderer, resultStack, resultX + 1, resultY + 1);
+		}
+
+		// Draw status text and ingredient count
+		int statusY = baseY + ingredientGridHeight + (canScrollDown ? 14 : 2);
+		String countText = "(" + allIngredients.size() + " sources)";
+		context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(countText),
+			panelX + PANEL_WIDTH / 2, statusY, 0xFF888888);
+
+		String statusText;
+		int statusColor;
+		if (hasAnyIngredient) {
+			statusText = "✓ Have ingredient";
+			statusColor = 0xFF44FF44;
+		} else {
+			statusText = "✗ Missing ingredients";
+			statusColor = 0xFFFF4444;
+		}
+		context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(statusText),
+			panelX + PANEL_WIDTH / 2, statusY + 12, statusColor);
+	}
+
+	/**
+	 * Find a furnace recipe that produces the given item
+	 */
+	private RecipeDisplayEntry findFurnaceRecipeForItem(Item item, ContextParameterMap contextParams) {
+		if (client == null || client.world == null) return null;
+
+		return RecipeCache.findFurnaceRecipeForItem(item, client.world);
+	}
+
+	/**
 	 * Find a crafting recipe that produces the given item
 	 */
 	private RecipeDisplayEntry findRecipeForItem(Item item, ContextParameterMap contextParams) {
@@ -506,6 +765,23 @@ public class RecipePreviewScreen extends Screen {
 				close();
 			}
 		}
+	}
+
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+		if (isFurnaceRecipe && totalIngredientRows > maxVisibleIngredientRows) {
+			// Scroll ingredients list
+			int maxScrollOffset = totalIngredientRows - maxVisibleIngredientRows;
+			if (verticalAmount > 0) {
+				// Scroll up
+				ingredientScrollOffset = Math.max(0, ingredientScrollOffset - 1);
+			} else if (verticalAmount < 0) {
+				// Scroll down
+				ingredientScrollOffset = Math.min(maxScrollOffset, ingredientScrollOffset + 1);
+			}
+			return true;
+		}
+		return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
 	}
 
 	private void craftRecipe() {
