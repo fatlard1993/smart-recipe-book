@@ -18,6 +18,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.List;
 import java.util.ArrayList;
 
+/**
+ * Hooks into network packet handlers to:
+ * 1. Capture recipe data from the server into our RecipeCache
+ * 2. Forward inventory updates to AutoCraftExecutor for execution timing
+ */
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
 

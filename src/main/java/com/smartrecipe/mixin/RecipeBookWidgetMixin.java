@@ -1,11 +1,8 @@
 package com.smartrecipe.mixin;
 
-import com.smartrecipe.SmartRecipeBookMod;
 import com.smartrecipe.crafting.AutoCraftExecutor;
-import com.smartrecipe.crafting.VanillaCraftingHelper;
 import com.smartrecipe.recipe.RecipeTreeCalculator;
 import com.smartrecipe.recipe.CraftingPlan;
-import com.smartrecipe.screen.RecipeChoiceScreen;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.recipebook.RecipeBookWidget;
@@ -18,58 +15,31 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * Intercepts recipe selection in the vanilla recipe book widget.
+ * When a recipe requires sub-crafting (e.g., sticks for a pickaxe),
+ * cancels vanilla handling and delegates to AutoCraftExecutor.
+ */
 @Mixin(RecipeBookWidget.class)
 public abstract class RecipeBookWidgetMixin {
 
 	@Shadow
 	protected MinecraftClient client;
 
-	/**
-	 * Intercept recipe selection to check if we need to auto-craft dependencies
-	 */
 	@Inject(
 		method = "select",
 		at = @At("HEAD"),
 		cancellable = true
 	)
 	private void onRecipeSelect(RecipeResultCollection results, NetworkRecipeId recipeId, boolean craftAll, CallbackInfoReturnable<Boolean> cir) {
-		// Skip intercept if we're executing our own plan
-		if (VanillaCraftingHelper.isExecutingPlan()) {
-			return; // Let vanilla handle it
-		}
-
 		if (client == null || client.player == null) return;
 
-		// Get the crafting plan for this recipe
 		CraftingPlan plan = RecipeTreeCalculator.calculatePlan(client, recipeId);
-
-		if (plan == null) {
-			// No plan needed, let vanilla handle it
+		if (plan == null || !plan.requiresSubCrafting()) {
 			return;
 		}
 
-		// Only intercept if we need to craft sub-components
-		if (!plan.requiresSubCrafting()) {
-			return;
-		}
-
-		// Check if there are multiple recipe choices
-		if (plan.hasRecipeChoices()) {
-			// Show popup for user to choose recipes
-			cir.setReturnValue(true);
-			client.setScreen(new RecipeChoiceScreen(
-				client.currentScreen,
-				plan,
-				(finalPlan) -> {
-					// Execute the plan after user confirms choices
-					AutoCraftExecutor.execute(client, finalPlan, craftAll);
-				}
-			));
-			return;
-		}
-
-		// Execute multi-step plan
 		cir.setReturnValue(true);
-		AutoCraftExecutor.execute(client, plan, craftAll);
+		AutoCraftExecutor.execute(client, plan, 1);
 	}
 }

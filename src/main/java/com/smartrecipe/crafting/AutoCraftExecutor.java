@@ -17,120 +17,133 @@ import java.util.List;
 import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 
 /**
- * Executes multi-step crafting plans by sending CraftRequestC2SPacket directly.
- * Uses tick-based delays to ensure server has time to process each step.
+ * Executes multi-step crafting plans by sending craft packets to the server.
+ *
+ * Uses a hybrid timing strategy: waits for inventory updates from the server
+ * to confirm each step completed, with a tick-based timeout as a fallback
+ * in case the update is missed or delayed.
+ *
+ * Aborts if the screen handler changes mid-execution (player closed the
+ * crafting screen or opened a different one).
  */
 public class AutoCraftExecutor {
 
 	private static List<CraftingPlan.CraftingStep> steps = new ArrayList<>();
 	private static int currentStepIndex = 0;
 	private static boolean isExecuting = false;
-	private static boolean userCraftAll = false;
 	private static MinecraftClient currentClient = null;
 	private static int ticksUntilNextStep = 0;
-	private static final int TICKS_BETWEEN_STEPS = 3; // 3 ticks between crafts
 
-	// For multi-craft support
-	private static int totalQuantity = 1;
-	private static int currentQuantityIndex = 0;
-	private static List<CraftingPlan.CraftingStep> originalSteps = new ArrayList<>();
+	// Fallback timeout if inventory update never arrives.
+	// 3 ticks (~150ms) is enough for LAN/singleplayer; on laggy servers
+	// the inventory update hook will fire first and skip the wait.
+	private static final int TICK_TIMEOUT = 3;
+
+	// Set true when we receive an inventory update during execution,
+	// allowing the next step to fire immediately on the next tick.
+	private static boolean inventoryUpdated = false;
+
+	// Track the syncId we started with — if it changes, the screen changed
+	private static int initialSyncId = -1;
+
+	// Track the pending step whose result has not yet been confirmed
+	private static CraftingPlan.CraftingStep pendingStep = null;
 
 	/**
-	 * Execute a crafting plan (single item)
+	 * Execute a crafting plan, repeating it {@code quantity} times.
 	 */
-	public static void execute(MinecraftClient client, CraftingPlan plan, boolean all) {
-		execute(client, plan, all, 1);
-	}
-
-	/**
-	 * Execute a crafting plan multiple times
-	 */
-	public static void execute(MinecraftClient client, CraftingPlan plan, boolean all, int quantity) {
+	public static void execute(MinecraftClient client, CraftingPlan plan, int quantity) {
 		if (isExecuting) {
 			SmartRecipeBookMod.LOGGER.warn("Already executing a crafting plan");
 			return;
 		}
 
-		currentClient = client;
-		userCraftAll = all;
-		originalSteps = new ArrayList<>(plan.getSteps());
-		totalQuantity = quantity;
-		currentQuantityIndex = 0;
+		if (client.player == null) return;
 
-		// Build the full step list: repeat plan for each quantity
+		currentClient = client;
+		initialSyncId = client.player.currentScreenHandler.syncId;
+
+		List<CraftingPlan.CraftingStep> originalSteps = plan.getSteps();
 		steps = new ArrayList<>();
 		for (int i = 0; i < quantity; i++) {
 			steps.addAll(originalSteps);
 		}
 		currentStepIndex = 0;
 
-		SmartRecipeBookMod.LOGGER.info("Starting crafting plan with {} steps x {} quantity = {} total steps",
+		SmartRecipeBookMod.LOGGER.debug("Starting crafting plan: {} steps x {} = {} total",
 			originalSteps.size(), quantity, steps.size());
 
 		isExecuting = true;
-		// Schedule first step for next tick
+		inventoryUpdated = false;
+		pendingStep = null;
 		ticksUntilNextStep = 1;
-		SmartRecipeBookMod.LOGGER.info("Scheduled first step for next tick");
 	}
 
-	/**
-	 * Execute the current step by sending CraftRequestC2SPacket directly
-	 */
 	private static void executeCurrentStep() {
 		if (currentStepIndex >= steps.size()) {
-			SmartRecipeBookMod.LOGGER.info("Crafting plan complete!");
-			isExecuting = false;
-			currentClient = null;
+			confirmPendingStep();
+			SmartRecipeBookMod.LOGGER.debug("Crafting plan complete");
+			reset();
 			return;
 		}
 
 		if (currentClient == null || currentClient.player == null) {
-			SmartRecipeBookMod.LOGGER.error("Client or player is null, aborting");
+			SmartRecipeBookMod.LOGGER.error("Client or player is null, aborting plan");
 			cancel();
 			return;
 		}
 
-		CraftingPlan.CraftingStep step = steps.get(currentStepIndex);
-
-		// Use craftAll=false to craft just one batch (not all available materials)
-		// This prevents using more ingredients than needed
-		boolean useCraftAll = false;
-
-		SmartRecipeBookMod.LOGGER.info("Executing step {}/{}: {} (craftAll: {})",
-			currentStepIndex + 1, steps.size(), step.getRecipeId(), useCraftAll);
-
-		// Send CraftRequestC2SPacket directly - bypasses vanilla recipe book
-		VanillaCraftingHelper.sendCraftRequest(step.getRecipeId(), useCraftAll);
-
-		// Click the result slot to complete the craft
-		// This moves the crafted item to inventory
-		clickCraftingResult();
-
-		// Track the crafted item for sorting purposes
-		ItemStack result = step.getResult();
-		if (!result.isEmpty()) {
-			CraftCountTracker.increment(result.getItem(), result.getCount());
-			SmartRecipeBookMod.LOGGER.info("Tracked craft: {} x{}", result.getItem().getName().getString(), result.getCount());
+		// Abort if the screen handler changed (player closed crafting screen)
+		ScreenHandler handler = currentClient.player.currentScreenHandler;
+		if (handler == null || handler.syncId != initialSyncId) {
+			SmartRecipeBookMod.LOGGER.warn("Screen changed during crafting, aborting plan");
+			cancel();
+			return;
 		}
 
-		// Move to next step
+		// Confirm the previous step now that we got an inventory update
+		confirmPendingStep();
+
+		CraftingPlan.CraftingStep step = steps.get(currentStepIndex);
+
+		SmartRecipeBookMod.LOGGER.debug("Step {}/{}: {}",
+			currentStepIndex + 1, steps.size(), step.getRecipeId());
+
+		CraftPacketSender.sendCraftRequest(step.getRecipeId(), false);
+		clickCraftingResult();
+
+		// Track this step as pending — count will be incremented on confirmation
+		pendingStep = step;
+
 		currentStepIndex++;
+		inventoryUpdated = false;
 
 		if (currentStepIndex < steps.size()) {
-			// Schedule next step after delay
-			ticksUntilNextStep = TICKS_BETWEEN_STEPS;
-			SmartRecipeBookMod.LOGGER.info("Waiting {} ticks before next step", ticksUntilNextStep);
+			ticksUntilNextStep = TICK_TIMEOUT;
 		} else {
-			SmartRecipeBookMod.LOGGER.info("All steps sent, crafting plan complete!");
-			isExecuting = false;
-			currentClient = null;
+			// Last step — wait for final confirmation then complete
+			ticksUntilNextStep = TICK_TIMEOUT;
 		}
 	}
 
 	/**
-	 * Click the crafting result slot to complete the craft and move items to inventory
-	 * Note: We send this immediately after select() - the server will queue it and
-	 * process it after filling the grid. Shift-click crafts all available.
+	 * Credit the craft count for the pending step once we have
+	 * confirmation (inventory update or timeout).
+	 */
+	private static void confirmPendingStep() {
+		if (pendingStep == null) return;
+
+		ItemStack result = pendingStep.getResult();
+		if (!result.isEmpty()) {
+			CraftCountTracker.increment(result.getItem(), result.getCount());
+		}
+		pendingStep = null;
+	}
+
+	/**
+	 * Shift-click the crafting result slot to move items to inventory.
+	 * Sent immediately after the craft request — the server queues it
+	 * and processes it after filling the grid.
 	 */
 	private static void clickCraftingResult() {
 		if (currentClient == null || currentClient.player == null) return;
@@ -142,70 +155,83 @@ public class AutoCraftExecutor {
 		short resultSlotId = 0; // Result slot is always slot 0 in crafting screens
 		int stateId = handler.getRevision();
 
-		SmartRecipeBookMod.LOGGER.info("Sending shift-click on result slot (syncId: {}, stateId: {})", syncId, stateId);
-
-		// Send a single shift-click packet - server will craft all available items
-		// We don't check client-side slot because server hasn't responded yet
 		ClickSlotC2SPacket packet = new ClickSlotC2SPacket(
 			syncId,
 			stateId,
 			resultSlotId,
-			(byte) 0, // button 0 = left click
-			SlotActionType.QUICK_MOVE, // shift-click to move to inventory
-			new Int2ObjectArrayMap<>(), // modified stacks
-			ItemStackHash.EMPTY // cursor (empty when shift-clicking)
+			(byte) 0,
+			SlotActionType.QUICK_MOVE,
+			new Int2ObjectArrayMap<>(),
+			ItemStackHash.EMPTY
 		);
 		currentClient.getNetworkHandler().sendPacket(packet);
-		SmartRecipeBookMod.LOGGER.info("Click packet sent");
 	}
 
 	/**
-	 * Called every client tick - handles delayed execution
+	 * Called every client tick. Advances execution when either:
+	 * - An inventory update arrived (server confirmed the craft), or
+	 * - The tick timeout elapsed (fallback for missed updates).
 	 */
 	public static void onClientTick(MinecraftClient client) {
 		if (!isExecuting) return;
 
+		if (inventoryUpdated) {
+			inventoryUpdated = false;
+			ticksUntilNextStep = 0;
+			executeCurrentStep();
+			return;
+		}
+
 		if (ticksUntilNextStep > 0) {
 			ticksUntilNextStep--;
 			if (ticksUntilNextStep == 0) {
-				SmartRecipeBookMod.LOGGER.info("Delay complete, executing next step");
-				executeCurrentStep();
+				if (currentStepIndex >= steps.size()) {
+					// Final step timed out — complete anyway
+					confirmPendingStep();
+					SmartRecipeBookMod.LOGGER.debug("Crafting plan complete");
+					reset();
+				} else {
+					executeCurrentStep();
+				}
 			}
 		}
 	}
 
 	/**
-	 * Cancel the current crafting plan
+	 * Called when the server sends an inventory or slot update.
+	 * Signals that the previous craft step likely completed.
 	 */
+	public static void onInventoryUpdate() {
+		if (isExecuting) {
+			inventoryUpdated = true;
+		}
+	}
+
 	public static void cancel() {
-		SmartRecipeBookMod.LOGGER.info("Crafting plan cancelled");
+		SmartRecipeBookMod.LOGGER.debug("Crafting plan cancelled");
+		reset();
+	}
+
+	/**
+	 * Reset all execution state. Called on completion, cancellation,
+	 * and world disconnect to prevent stale state.
+	 */
+	public static void reset() {
 		steps.clear();
 		currentStepIndex = 0;
 		isExecuting = false;
 		ticksUntilNextStep = 0;
+		inventoryUpdated = false;
 		currentClient = null;
+		initialSyncId = -1;
+		pendingStep = null;
 	}
 
-	/**
-	 * Check if currently executing a plan
-	 */
 	public static boolean isExecuting() {
 		return isExecuting;
 	}
 
-	/**
-	 * Get remaining steps count
-	 */
 	public static int getRemainingSteps() {
 		return steps.size() - currentStepIndex;
-	}
-
-	/**
-	 * Called when inventory is updated - can be used to speed up execution
-	 * Currently we use tick-based delays, but this hook remains for future use
-	 */
-	public static void onInventoryUpdate() {
-		// Currently using tick-based delays instead of inventory-based triggering
-		// This method is kept for potential future optimization
 	}
 }

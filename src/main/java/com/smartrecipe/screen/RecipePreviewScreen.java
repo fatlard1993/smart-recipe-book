@@ -9,7 +9,6 @@ import com.smartrecipe.recipe.RecipeTreeCalculator;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.CraftingScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -21,6 +20,7 @@ import net.minecraft.recipe.display.ShapelessCraftingRecipeDisplay;
 import net.minecraft.recipe.display.SlotDisplay;
 import net.minecraft.recipe.display.SlotDisplayContexts;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.context.ContextParameterMap;
 
 import java.util.*;
@@ -40,7 +40,6 @@ public class RecipePreviewScreen extends Screen {
 
 	private CraftingPlan craftingPlan;
 	private boolean canCraft = false;
-	private boolean canCraftDirect = false;
 	private int craftQuantity = 1;
 	private int maxCraftable = 1;
 
@@ -82,18 +81,14 @@ public class RecipePreviewScreen extends Screen {
 	private int maxVisibleIngredientRows = 3;
 	private int totalIngredientRows = 0;
 
-	public RecipePreviewScreen(Screen parent, RecipeDisplayEntry recipe) {
+	public RecipePreviewScreen(Screen parent, RecipeDisplayEntry recipe, int craftingGridSize) {
 		super(Text.literal("Recipe Preview"));
 		this.parent = parent;
 		this.recipe = recipe;
 
-		// Check if this is a furnace recipe
 		this.isFurnaceRecipe = recipe.display() instanceof FurnaceRecipeDisplay;
+		this.craftingGridSize = isFurnaceRecipe ? 1 : craftingGridSize;
 
-		// Determine crafting grid size from parent chain (only relevant for crafting)
-		this.craftingGridSize = isFurnaceRecipe ? 1 : determineCraftingGridSize(parent);
-
-		// Get result stack
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.world != null) {
 			ContextParameterMap contextParams = SlotDisplayContexts.createParameters(client.world);
@@ -103,33 +98,11 @@ public class RecipePreviewScreen extends Screen {
 			this.resultStack = ItemStack.EMPTY;
 		}
 
-		// Get player inventory
 		if (client.player != null) {
 			this.playerInventory = RecipeTreeCalculator.getInventoryContents(client.player);
 		} else {
 			this.playerInventory = new HashMap<>();
 		}
-	}
-
-	private int determineCraftingGridSize(Screen screen) {
-		// Walk up the parent chain to find the original screen type
-		Screen current = screen;
-		while (current != null) {
-			if (current instanceof SmartRecipeBookScreen recipeBook) {
-				// SmartRecipeBookScreen knows its grid size
-				return recipeBook.getCraftingGridSize();
-			}
-			if (current instanceof CraftingScreen) {
-				return 3;
-			}
-			// Try to get parent if it's one of our screens
-			if (current instanceof RecipePreviewScreen preview) {
-				current = preview.parent;
-			} else {
-				break;
-			}
-		}
-		return 2; // Default to inventory grid
 	}
 
 	@Override
@@ -209,15 +182,9 @@ public class RecipePreviewScreen extends Screen {
 		ContextParameterMap contextParams = SlotDisplayContexts.createParameters(client.world);
 
 		if (isFurnaceRecipe) {
-			// For furnace recipes, just check if we have the ingredient
-			canCraftDirect = hasSmeltingIngredient(contextParams);
-			canCraft = canCraftDirect;
+			canCraft = hasSmeltingIngredient(contextParams);
 			craftingPlan = null;
 		} else {
-			// Check direct craftability
-			canCraftDirect = canCraftRecipeDirect(contextParams);
-
-			// Calculate full plan for recursive craftability
 			craftingPlan = RecipeTreeCalculator.calculatePlan(client, recipe.id());
 			canCraft = craftingPlan != null && craftingPlan.canCraft();
 		}
@@ -247,42 +214,7 @@ public class RecipePreviewScreen extends Screen {
 
 		// Use RecipeTreeCalculator to calculate max craftable with sub-crafting support
 		maxCraftable = RecipeTreeCalculator.calculateMaxCraftable(client, recipe.id());
-		SmartRecipeBookMod.LOGGER.info("Max craftable for {}: {}", resultStack.getName().getString(), maxCraftable);
-	}
-
-	private boolean canCraftRecipeDirect(ContextParameterMap contextParams) {
-		RecipeDisplay display = recipe.display();
-
-		List<SlotDisplay> ingredientSlots;
-		if (display instanceof ShapedCraftingRecipeDisplay shaped) {
-			ingredientSlots = shaped.ingredients();
-		} else if (display instanceof ShapelessCraftingRecipeDisplay shapeless) {
-			ingredientSlots = shapeless.ingredients();
-		} else {
-			return false;
-		}
-
-		Map<Item, Integer> tempInventory = new HashMap<>(playerInventory);
-
-		for (SlotDisplay slot : ingredientSlots) {
-			List<ItemStack> possible = slot.getStacks(contextParams);
-			if (possible.isEmpty()) continue;
-
-			boolean found = false;
-			for (ItemStack stack : possible) {
-				if (stack.isEmpty()) continue;
-				int have = tempInventory.getOrDefault(stack.getItem(), 0);
-				if (have > 0) {
-					tempInventory.put(stack.getItem(), have - 1);
-					found = true;
-					break;
-				}
-			}
-
-			if (!found) return false;
-		}
-
-		return true;
+		SmartRecipeBookMod.LOGGER.debug("Max craftable for {}: {}", resultStack.getName().getString(), maxCraftable);
 	}
 
 	@Override
@@ -349,17 +281,16 @@ public class RecipePreviewScreen extends Screen {
 			// Show count in inventory
 			int have = playerInventory.getOrDefault(hoveredSlot.stack.getItem(), 0);
 			if (have > 0) {
-				tooltip.add(Text.literal("§7In inventory: " + have));
+				tooltip.add(Text.literal("In inventory: " + have).formatted(Formatting.GRAY));
 			} else {
-				tooltip.add(Text.literal("§cNot in inventory"));
+				tooltip.add(Text.literal("Not in inventory").formatted(Formatting.RED));
 			}
 
-			// Show if clickable (has recipe)
 			if (hoveredSlot.recipe != null) {
 				if (isFurnaceRecipe) {
-					tooltip.add(Text.literal("§b[Click to see how to smelt this]"));
+					tooltip.add(Text.literal("[Click to see how to smelt this]").formatted(Formatting.AQUA));
 				} else {
-					tooltip.add(Text.literal("§b[Click to view recipe]"));
+					tooltip.add(Text.literal("[Click to view recipe]").formatted(Formatting.AQUA));
 				}
 			}
 
@@ -647,7 +578,7 @@ public class RecipePreviewScreen extends Screen {
 
 		// Draw fire icon (represents smelting)
 		int fireX = arrow1X + 18;
-		context.drawTextWithShadow(this.textRenderer, Text.literal("🔥"), fireX, ingredientCenterY - 4, 0xFFAA00);
+		context.drawTextWithShadow(this.textRenderer, Text.literal("*"), fireX, ingredientCenterY - 4, 0xFFAA00);
 
 		// Draw second arrow
 		int arrow2X = fireX + 18;
@@ -787,21 +718,10 @@ public class RecipePreviewScreen extends Screen {
 	private void craftRecipe() {
 		if (!canCraft || craftingPlan == null || client == null) return;
 
-		SmartRecipeBookMod.LOGGER.info("Crafting {}x {} from preview", craftQuantity, resultStack.getName().getString());
+		SmartRecipeBookMod.LOGGER.debug("Crafting {}x {} from preview", craftQuantity, resultStack.getName().getString());
 
-		// If plan requires choices, show choice screen
-		if (craftingPlan.hasRecipeChoices()) {
-			final int quantity = craftQuantity;
-			client.setScreen(new RecipeChoiceScreen(
-				null,
-				craftingPlan,
-				(finalPlan) -> AutoCraftExecutor.execute(client, finalPlan, false, quantity)
-			));
-			return;
-		}
-
-		// Execute the plan with quantity
-		AutoCraftExecutor.execute(client, craftingPlan, false, craftQuantity);
+		// Execute the plan
+		AutoCraftExecutor.execute(client, craftingPlan, craftQuantity);
 
 		// Show confirmation
 		showingConfirmation = true;
@@ -810,8 +730,8 @@ public class RecipePreviewScreen extends Screen {
 		// Disable buttons during confirmation
 		craftButton.active = false;
 		cancelButton.active = false;
-		plusButton.active = false;
-		minusButton.active = false;
+		if (plusButton != null) plusButton.active = false;
+		if (minusButton != null) minusButton.active = false;
 	}
 
 	@Override
@@ -828,11 +748,11 @@ public class RecipePreviewScreen extends Screen {
 		double mouseY = client.mouse.getY() * height / client.getWindow().getHeight();
 
 		if (click.button() == 0) {
-			if (isMouseOverButton(minusButton, mouseX, mouseY) && minusButton.active) {
+			if (minusButton != null && isMouseOverButton(minusButton, mouseX, mouseY) && minusButton.active) {
 				adjustQuantity(-1);
 				return true;
 			}
-			if (isMouseOverButton(plusButton, mouseX, mouseY) && plusButton.active) {
+			if (plusButton != null && isMouseOverButton(plusButton, mouseX, mouseY) && plusButton.active) {
 				adjustQuantity(1);
 				return true;
 			}
@@ -840,9 +760,9 @@ public class RecipePreviewScreen extends Screen {
 			// Check if clicking on an ingredient with a recipe
 			if (hoveredSlot != null && hoveredSlot.recipe != null) {
 				// Navigate to the recipe for this ingredient
-				SmartRecipeBookMod.LOGGER.info("Navigating to recipe for: {}",
+				SmartRecipeBookMod.LOGGER.debug("Navigating to recipe for: {}",
 					hoveredSlot.stack.getName().getString());
-				client.setScreen(new RecipePreviewScreen(this, hoveredSlot.recipe));
+				client.setScreen(new RecipePreviewScreen(this, hoveredSlot.recipe, craftingGridSize));
 				return true;
 			}
 		}

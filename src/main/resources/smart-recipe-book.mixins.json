@@ -11,10 +11,8 @@
 	],
 	"client": [
 		"RecipeBookWidgetMixin",
-		"RecipeBookWidgetAccessor",
 		"ClientPlayNetworkHandlerMixin",
 		"RecipeResultCollectionMixin",
-		"ClientRecipeBookMixin",
 		"RecipeBookScreenMixin",
 		"RecipeToastMixin"
 	]

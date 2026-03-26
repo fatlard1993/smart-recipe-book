@@ -23,9 +23,9 @@ import net.minecraft.recipe.display.RecipeDisplay;
 import net.minecraft.recipe.display.ShapedCraftingRecipeDisplay;
 import net.minecraft.recipe.display.ShapelessCraftingRecipeDisplay;
 import net.minecraft.recipe.display.SlotDisplayContexts;
-import net.minecraft.screen.slot.Slot;
 import com.smartrecipe.recipe.CraftCountTracker;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.context.ContextParameterMap;
 
 import java.util.*;
@@ -172,7 +172,7 @@ public class SmartRecipeBookScreen extends Screen {
 		// Get recipes based on mode
 		switch (recipeMode) {
 			case FURNACE:
-				allRecipes = RecipeCache.getRegularFurnaceRecipes();
+				allRecipes = RecipeCache.getFurnaceRecipes();
 				break;
 			case BLAST_FURNACE:
 				allRecipes = RecipeCache.getBlastFurnaceRecipes();
@@ -315,44 +315,8 @@ public class SmartRecipeBookScreen extends Screen {
 		return canCraft;
 	}
 
-	/**
-	 * Simple direct check if we have materials for a recipe (no sub-crafting)
-	 * Used for display purposes (green border)
-	 */
 	private boolean canCraftRecipeDirect(RecipeDisplayEntry entry, ContextParameterMap contextParams) {
-		RecipeDisplay display = entry.display();
-
-		List<net.minecraft.recipe.display.SlotDisplay> ingredients;
-		if (display instanceof ShapedCraftingRecipeDisplay shaped) {
-			ingredients = shaped.ingredients();
-		} else if (display instanceof ShapelessCraftingRecipeDisplay shapeless) {
-			ingredients = shapeless.ingredients();
-		} else {
-			return false;
-		}
-
-		// Create temporary inventory to simulate consumption
-		Map<Item, Integer> tempInventory = new HashMap<>(playerInventory);
-
-		for (var slot : ingredients) {
-			List<ItemStack> possible = slot.getStacks(contextParams);
-			if (possible.isEmpty()) continue;
-
-			boolean found = false;
-			for (ItemStack stack : possible) {
-				if (stack.isEmpty()) continue;
-				int have = tempInventory.getOrDefault(stack.getItem(), 0);
-				if (have > 0) {
-					tempInventory.put(stack.getItem(), have - 1);
-					found = true;
-					break;
-				}
-			}
-
-			if (!found) return false;
-		}
-
-		return true;
+		return RecipeTreeCalculator.canCraftDirect(entry.display(), contextParams, playerInventory);
 	}
 
 	/**
@@ -503,31 +467,28 @@ public class SmartRecipeBookScreen extends Screen {
 				tooltip.add(results.get(0).getName());
 
 				if (recipeMode.isFurnaceType()) {
-					// For furnace recipes, just check if we have the ingredient
 					boolean hasIngredient = canSmeltRecipe(hoveredRecipe, contextParams);
 					if (hasIngredient) {
-						tooltip.add(Text.literal("§a✓ Can smelt now").styled(s -> s));
+						tooltip.add(Text.literal("✓ Can smelt now").formatted(Formatting.GREEN));
 					} else {
-						tooltip.add(Text.literal("§c✗ Missing ingredient").styled(s -> s));
+						tooltip.add(Text.literal("✗ Missing ingredient").formatted(Formatting.RED));
 					}
 				} else {
 					boolean directlyCraftable = canCraftRecipeDirect(hoveredRecipe, contextParams);
 					if (directlyCraftable) {
-						tooltip.add(Text.literal("§a✓ Can craft now").styled(s -> s));
+						tooltip.add(Text.literal("✓ Can craft now").formatted(Formatting.GREEN));
 					} else {
-						// Check if craftable with sub-crafting (lazy evaluation)
 						Boolean cached = craftabilityCache.get(hoveredRecipe.id());
 						if (cached == null) {
-							// Calculate on hover
 							CraftingPlan plan = RecipeTreeCalculator.calculatePlan(client, hoveredRecipe.id());
 							cached = plan != null && plan.canCraft();
 							craftabilityCache.put(hoveredRecipe.id(), cached);
 						}
 
 						if (cached) {
-							tooltip.add(Text.literal("§e⚡ Requires sub-crafting").styled(s -> s));
+							tooltip.add(Text.literal("⚡ Requires sub-crafting").formatted(Formatting.YELLOW));
 						} else {
-							tooltip.add(Text.literal("§c✗ Missing materials").styled(s -> s));
+							tooltip.add(Text.literal("✗ Missing materials").formatted(Formatting.RED));
 						}
 					}
 				}
@@ -545,18 +506,16 @@ public class SmartRecipeBookScreen extends Screen {
 
 		// Check if clicking on a recipe slot
 		if (click.button() == 0 && hoveredRecipe != null) {
-			craftRecipe(hoveredRecipe);
+			openRecipePreview(hoveredRecipe);
 			return true;
 		}
 
 		return false;
 	}
 
-	private void craftRecipe(RecipeDisplayEntry entry) {
+	private void openRecipePreview(RecipeDisplayEntry entry) {
 		if (client == null) return;
-
-		// Open recipe preview screen (works for both crafting and furnace recipes)
-		client.setScreen(new RecipePreviewScreen(this, entry));
+		client.setScreen(new RecipePreviewScreen(this, entry, craftingGridSize));
 	}
 
 	@Override

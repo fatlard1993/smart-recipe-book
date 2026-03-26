@@ -1,6 +1,6 @@
 # Smart Recipe Book
 
-A Fabric mod that completely replaces Minecraft's recipe book with a smarter, more useful alternative. No more digging through cluttered recipe lists or manually crafting intermediate materials.
+A client-side Fabric mod that completely replaces Minecraft's recipe book with a smarter, more useful alternative. No more digging through cluttered recipe lists or manually crafting intermediate materials.
 
 ## What It Does
 
@@ -8,13 +8,17 @@ Open your inventory, crafting table, or any furnace and click the recipe book bu
 
 **The main idea:** If you have the raw materials to make something (even through multiple crafting steps), this mod shows it as craftable and handles the intermediate crafting for you.
 
+This is a **client-side only** mod — install it on your client, no server installation needed. In singleplayer, it shows all recipes regardless of unlock status. On multiplayer servers, it shows recipes the server has sent to your client.
+
 ## Features
 
 ### Smart Recipe Display
 
 - **Grid-aware filtering** - In your inventory (2x2 grid), you only see recipes you can actually craft there. At a crafting table (3x3), you see everything.
 - **Real craftability** - Recipes show as craftable when you have the materials, even if you need to craft intermediate items first.
-- **Usage tracking** - Recipes you craft frequently appear first.
+- **Usage tracking** - Recipes you craft frequently appear first (resets each session).
+- **Search** - Type to filter recipes by name in real time.
+- **Deduplication** - One recipe per result item, keeping the list clean.
 
 ### One-Click Complex Crafting
 
@@ -23,6 +27,7 @@ Want to craft a lantern but only have iron ingots, logs, and coal? The mod figur
 - Calculates the full crafting tree automatically
 - Identifies what intermediate items you need to make
 - Executes each crafting step in sequence
+- Choose how many to craft with the quantity selector
 
 ### Furnace Support
 
@@ -39,9 +44,13 @@ For smelting recipes with multiple valid inputs (like Gold Ingot from ore, raw g
 Click any recipe to see:
 
 - All required ingredients with quantities
-- Alternative ingredients where applicable
-- Scroll through recipes with many input options
+- Color-coded availability (green = have it, yellow = can sub-craft, red = missing)
 - Click ingredients to jump to their recipes
+- Scroll through recipes with many input options
+
+### Mod Compatibility
+
+- Compatible with Backpack Inventory mod (detects crafting grid size)
 
 ## Requirements
 
@@ -64,6 +73,12 @@ Click any recipe to see:
 ```
 
 Output JAR is in `build/libs/`.
+
+To run a development client:
+
+```bash
+./gradlew runClient
+```
 
 ## License
 

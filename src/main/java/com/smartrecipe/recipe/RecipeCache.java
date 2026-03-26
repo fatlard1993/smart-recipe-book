@@ -20,30 +20,27 @@ import net.minecraft.util.context.ContextParameterMap;
 import net.minecraft.world.World;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * Custom recipe cache that bypasses vanilla ClientRecipeBook.
- * Stores ALL recipes directly when received from the server.
+ * Primary recipe store that bypasses vanilla ClientRecipeBook.
+ * Stores ALL recipes received from the server or loaded from the integrated server.
  */
 public class RecipeCache {
 
-	// Thread-safe storage for all recipes
-	private static final Map<NetworkRecipeId, RecipeDisplayEntry> recipes = new ConcurrentHashMap<>();
+	private static final Map<NetworkRecipeId, RecipeDisplayEntry> recipes = new HashMap<>();
 
-	// Cached collections for UI (rebuilt when recipes change)
+	// Cached UI collections (rebuilt when recipes change)
 	private static List<RecipeResultCollection> cachedCollections = null;
 	private static Map<RecipeBookCategory, List<RecipeResultCollection>> cachedByCategory = null;
 
-	// Map from result item to recipes that produce it
-	private static Map<Item, List<RecipeDisplayEntry>> recipesByResult = new ConcurrentHashMap<>();
+	// Index: result item → recipes that produce it
+	private static Map<Item, List<RecipeDisplayEntry>> recipesByResult = new HashMap<>();
 
-	// Track if we've loaded from integrated server this session
 	private static boolean loadedFromServer = false;
 
 	/**
-	 * Clear all cached recipes (called when joining a new world)
+	 * Clear all state. Called on disconnect to prevent stale data across sessions.
 	 */
 	public static void clear() {
 		recipes.clear();
@@ -53,17 +50,11 @@ public class RecipeCache {
 		loadedFromServer = false;
 	}
 
-	/**
-	 * Add a single recipe to the cache
-	 */
 	public static void addRecipe(RecipeDisplayEntry entry) {
 		recipes.put(entry.id(), entry);
 		invalidateCache();
 	}
 
-	/**
-	 * Add multiple recipes to the cache (bulk add for initial sync)
-	 */
 	public static void addRecipes(Collection<RecipeDisplayEntry> entries) {
 		for (RecipeDisplayEntry entry : entries) {
 			recipes.put(entry.id(), entry);
@@ -71,45 +62,27 @@ public class RecipeCache {
 		invalidateCache();
 	}
 
-	/**
-	 * Remove a recipe from the cache
-	 */
 	public static void removeRecipe(NetworkRecipeId id) {
 		recipes.remove(id);
 		invalidateCache();
 	}
 
-	/**
-	 * Get a recipe by its ID
-	 */
 	public static RecipeDisplayEntry getRecipe(NetworkRecipeId id) {
 		return recipes.get(id);
 	}
 
-	/**
-	 * Get all recipes
-	 */
 	public static Collection<RecipeDisplayEntry> getAllRecipes() {
 		return Collections.unmodifiableCollection(recipes.values());
 	}
 
-	/**
-	 * Get the total count of recipes
-	 */
 	public static int getRecipeCount() {
 		return recipes.size();
 	}
 
-	/**
-	 * Check if cache has recipes
-	 */
 	public static boolean hasRecipes() {
 		return !recipes.isEmpty();
 	}
 
-	/**
-	 * Get all recipes as RecipeResultCollections (for UI compatibility)
-	 */
 	public static List<RecipeResultCollection> getOrderedResults() {
 		if (cachedCollections == null) {
 			rebuildCollections();
@@ -117,9 +90,6 @@ public class RecipeCache {
 		return cachedCollections;
 	}
 
-	/**
-	 * Get recipes by category
-	 */
 	public static List<RecipeResultCollection> getResultsByCategory(RecipeBookCategory category) {
 		if (cachedByCategory == null) {
 			rebuildCollections();
@@ -128,17 +98,10 @@ public class RecipeCache {
 	}
 
 	/**
-	 * Find a recipe by ID (searches our cache)
-	 */
-	public static RecipeDisplayEntry findRecipeById(NetworkRecipeId recipeId) {
-		return recipes.get(recipeId);
-	}
-
-	/**
-	 * Find recipes that produce a given item
+	 * Find recipes that produce a given item.
+	 * Rebuilds the result index lazily if it was invalidated.
 	 */
 	public static List<RecipeDisplayEntry> findRecipesForItem(Item item, World world) {
-		// Rebuild result mapping if needed
 		if (recipesByResult.isEmpty() && !recipes.isEmpty()) {
 			rebuildResultMapping(world);
 		}
@@ -146,38 +109,27 @@ public class RecipeCache {
 	}
 
 	/**
-	 * Find any crafting recipe that produces the given item
+	 * Find any crafting recipe (shaped or shapeless) that produces the given item.
 	 */
 	public static RecipeDisplayEntry findCraftingRecipeForItem(Item item, World world) {
-		List<RecipeDisplayEntry> candidates = findRecipesForItem(item, world);
-
-		// Return first crafting recipe found
-		for (RecipeDisplayEntry entry : candidates) {
+		for (RecipeDisplayEntry entry : findRecipesForItem(item, world)) {
 			RecipeDisplay display = entry.display();
 			if (display instanceof ShapedCraftingRecipeDisplay ||
 				display instanceof ShapelessCraftingRecipeDisplay) {
 				return entry;
 			}
 		}
-
 		return null;
 	}
 
-	/**
-	 * Invalidate cached collections (call when recipes change)
-	 */
 	private static void invalidateCache() {
 		cachedCollections = null;
 		cachedByCategory = null;
 		recipesByResult.clear();
 	}
 
-	/**
-	 * Rebuild the result item mapping
-	 */
 	private static void rebuildResultMapping(World world) {
 		recipesByResult.clear();
-
 		if (world == null) return;
 
 		ContextParameterMap contextParams = SlotDisplayContexts.createParameters(world);
@@ -190,23 +142,19 @@ public class RecipeCache {
 					recipesByResult.computeIfAbsent(resultItem, k -> new ArrayList<>()).add(entry);
 				}
 			} catch (Exception e) {
-				// Skip recipes that fail to get result
+				SmartRecipeBookMod.LOGGER.debug("Skipped recipe during result mapping: {}", e.getMessage());
 			}
 		}
 
 		SmartRecipeBookMod.LOGGER.debug("RecipeCache: Built result mapping for {} unique items", recipesByResult.size());
 	}
 
-	/**
-	 * Rebuild RecipeResultCollections from our recipe cache
-	 */
 	private static void rebuildCollections() {
-		// Group recipes by category and then by group ID
 		Map<RecipeBookCategory, Map<Integer, List<RecipeDisplayEntry>>> categorized = new LinkedHashMap<>();
 
 		for (RecipeDisplayEntry entry : recipes.values()) {
 			RecipeBookCategory category = entry.category();
-			int group = entry.group().orElse(-1); // -1 for ungrouped
+			int group = entry.group().orElse(-1);
 
 			categorized
 				.computeIfAbsent(category, k -> new LinkedHashMap<>())
@@ -214,7 +162,6 @@ public class RecipeCache {
 				.add(entry);
 		}
 
-		// Build collections
 		List<RecipeResultCollection> allCollections = new ArrayList<>();
 		Map<RecipeBookCategory, List<RecipeResultCollection>> byCategory = new LinkedHashMap<>();
 
@@ -240,9 +187,8 @@ public class RecipeCache {
 			allCollections.size(), byCategory.size());
 	}
 
-	/**
-	 * Get all crafting recipes (shaped and shapeless only)
-	 */
+	// --- Recipe type filters ---
+
 	public static List<RecipeDisplayEntry> getCraftingRecipes() {
 		return recipes.values().stream()
 			.filter(entry -> {
@@ -253,168 +199,76 @@ public class RecipeCache {
 			.collect(Collectors.toList());
 	}
 
-	/**
-	 * Get all furnace recipes (smelting, blasting, smoking)
-	 */
 	public static List<RecipeDisplayEntry> getFurnaceRecipes() {
 		return recipes.values().stream()
-			.filter(entry -> {
-				RecipeDisplay display = entry.display();
-				return display instanceof FurnaceRecipeDisplay;
-			})
+			.filter(entry -> entry.display() instanceof FurnaceRecipeDisplay)
 			.collect(Collectors.toList());
 	}
 
-	/**
-	 * Get furnace recipes filtered by category prefix.
-	 * Categories in Minecraft are like FURNACE_FOOD, BLAST_FURNACE_BLOCKS, SMOKER_FOOD, etc.
-	 */
-	public static List<RecipeDisplayEntry> getFurnaceRecipesByCategory(String categoryPrefix) {
-		return recipes.values().stream()
-			.filter(entry -> {
-				RecipeDisplay display = entry.display();
-				if (!(display instanceof FurnaceRecipeDisplay)) return false;
-
-				// Check if the category name starts with the prefix
-				String categoryName = entry.category().toString();
-				return categoryName.startsWith(categoryPrefix);
-			})
-			.collect(Collectors.toList());
-	}
-
-	/**
-	 * Get recipes for regular furnace (all smelting categories)
-	 */
-	public static List<RecipeDisplayEntry> getRegularFurnaceRecipes() {
-		return recipes.values().stream()
-			.filter(entry -> {
-				RecipeDisplay display = entry.display();
-				if (!(display instanceof FurnaceRecipeDisplay)) return false;
-
-				// Regular furnace accepts FURNACE_*, but also can do what blast furnace and smoker do
-				// So we show ALL furnace recipes for the regular furnace
-				return true;
-			})
-			.collect(Collectors.toList());
-	}
-
-	/**
-	 * Get recipes for blast furnace (ores and metals only)
-	 */
 	public static List<RecipeDisplayEntry> getBlastFurnaceRecipes() {
-		List<RecipeDisplayEntry> result = new ArrayList<>();
-
-		// Get the blast furnace categories from RecipeBookCategories
 		RecipeBookCategory blastFurnaceBlocks = RecipeBookCategories.BLAST_FURNACE_BLOCKS;
 		RecipeBookCategory blastFurnaceMisc = RecipeBookCategories.BLAST_FURNACE_MISC;
 
+		List<RecipeDisplayEntry> result = new ArrayList<>();
 		for (RecipeDisplayEntry entry : recipes.values()) {
-			RecipeDisplay display = entry.display();
-			if (!(display instanceof FurnaceRecipeDisplay)) continue;
-
+			if (!(entry.display() instanceof FurnaceRecipeDisplay)) continue;
 			RecipeBookCategory category = entry.category();
 			if (category == blastFurnaceBlocks || category == blastFurnaceMisc) {
 				result.add(entry);
 			}
 		}
-
 		return result;
 	}
 
-	/**
-	 * Get recipes for smoker (food only)
-	 */
 	public static List<RecipeDisplayEntry> getSmokerRecipes() {
-		List<RecipeDisplayEntry> result = new ArrayList<>();
-
-		// Get the smoker category from RecipeBookCategories
 		RecipeBookCategory smokerFood = RecipeBookCategories.SMOKER_FOOD;
 
+		List<RecipeDisplayEntry> result = new ArrayList<>();
 		for (RecipeDisplayEntry entry : recipes.values()) {
-			RecipeDisplay display = entry.display();
-			if (!(display instanceof FurnaceRecipeDisplay)) continue;
-
-			RecipeBookCategory category = entry.category();
-			if (category == smokerFood) {
+			if (!(entry.display() instanceof FurnaceRecipeDisplay)) continue;
+			if (entry.category() == smokerFood) {
 				result.add(entry);
 			}
 		}
-
 		return result;
 	}
 
-	/**
-	 * Find a furnace recipe that produces the given item
-	 */
 	public static RecipeDisplayEntry findFurnaceRecipeForItem(Item item, World world) {
-		List<RecipeDisplayEntry> candidates = findRecipesForItem(item, world);
-
-		// Return first furnace recipe found
-		for (RecipeDisplayEntry entry : candidates) {
-			RecipeDisplay display = entry.display();
-			if (display instanceof FurnaceRecipeDisplay) {
+		for (RecipeDisplayEntry entry : findRecipesForItem(item, world)) {
+			if (entry.display() instanceof FurnaceRecipeDisplay) {
 				return entry;
 			}
 		}
-
 		return null;
 	}
 
-	/**
-	 * Find ALL furnace recipes that produce the given item
-	 */
 	public static List<RecipeDisplayEntry> findAllFurnaceRecipesForItem(Item item, World world) {
-		List<RecipeDisplayEntry> candidates = findRecipesForItem(item, world);
 		List<RecipeDisplayEntry> furnaceRecipes = new ArrayList<>();
-
-		for (RecipeDisplayEntry entry : candidates) {
-			RecipeDisplay display = entry.display();
-			if (display instanceof FurnaceRecipeDisplay) {
+		for (RecipeDisplayEntry entry : findRecipesForItem(item, world)) {
+			if (entry.display() instanceof FurnaceRecipeDisplay) {
 				furnaceRecipes.add(entry);
 			}
 		}
-
 		return furnaceRecipes;
 	}
 
-	/**
-	 * Debug: print cache statistics
-	 */
-	public static void logStats() {
-		SmartRecipeBookMod.LOGGER.info("RecipeCache stats: {} total recipes", recipes.size());
-
-		// Count by category
-		Map<RecipeBookCategory, Integer> byCategory = new HashMap<>();
-		for (RecipeDisplayEntry entry : recipes.values()) {
-			byCategory.merge(entry.category(), 1, Integer::sum);
-		}
-
-		for (Map.Entry<RecipeBookCategory, Integer> e : byCategory.entrySet()) {
-			SmartRecipeBookMod.LOGGER.info("  Category {}: {} recipes", e.getKey(), e.getValue());
-		}
-	}
+	// --- Server loading ---
 
 	/**
 	 * Load ALL recipes from the integrated server (singleplayer only).
-	 * This bypasses the recipe book unlock system to show all recipes.
+	 * Bypasses the recipe book unlock system to show all recipes.
 	 */
 	public static void loadFromIntegratedServer() {
 		MinecraftClient client = MinecraftClient.getInstance();
-
-		if (client.getServer() == null) {
-			return;
-		}
+		if (client.getServer() == null) return;
 
 		try {
 			ServerRecipeManager recipeManager = client.getServer().getRecipeManager();
 			ServerRecipeManagerAccessor accessor = (ServerRecipeManagerAccessor) recipeManager;
 			List<ServerRecipeManager.ServerRecipe> serverRecipes = accessor.getRecipes();
 
-			if (serverRecipes == null || serverRecipes.isEmpty()) {
-				return;
-			}
+			if (serverRecipes == null || serverRecipes.isEmpty()) return;
 
-			// Clear existing and add all recipes
 			recipes.clear();
 			for (ServerRecipeManager.ServerRecipe serverRecipe : serverRecipes) {
 				RecipeDisplayEntry entry = serverRecipe.display();
@@ -428,23 +282,16 @@ public class RecipeCache {
 	}
 
 	/**
-	 * Ensure recipes are loaded, loading from server if needed
+	 * Ensure recipes are loaded, loading from integrated server if needed.
+	 * Packet-captured recipes only include unlocked ones; the integrated server
+	 * gives us the full set for singleplayer.
 	 */
 	public static void ensureLoaded() {
-		// Try to load from integrated server if we haven't yet
-		// (the packet-captured recipes are only unlocked ones)
 		if (!loadedFromServer) {
 			loadFromIntegratedServer();
-			if (recipes.size() > 100) {
+			if (!recipes.isEmpty()) {
 				loadedFromServer = true;
 			}
 		}
-	}
-
-	/**
-	 * Reset the loaded flag (call when world changes)
-	 */
-	public static void resetLoadedFlag() {
-		loadedFromServer = false;
 	}
 }

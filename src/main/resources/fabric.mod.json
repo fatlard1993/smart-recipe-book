@@ -15,7 +15,6 @@
 		"client": ["com.smartrecipe.SmartRecipeBookMod"]
 	},
 	"mixins": ["smart-recipe-book.mixins.json"],
-	"accessWidener": "smart-recipe-book.accesswidener",
 	"depends": {
 		"fabricloader": ">=0.18.1",
 		"fabric-api": "*",

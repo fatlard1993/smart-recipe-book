@@ -13,7 +13,6 @@ base {
 repositories {}
 
 loom {
-	accessWidenerPath = file("src/main/resources/smart-recipe-book.accesswidener")
 }
 
 dependencies {
