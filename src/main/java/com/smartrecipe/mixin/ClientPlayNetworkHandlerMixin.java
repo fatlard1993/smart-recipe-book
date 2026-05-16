@@ -2,20 +2,19 @@ package com.smartrecipe.mixin;
 
 import com.smartrecipe.crafting.AutoCraftExecutor;
 import com.smartrecipe.recipe.RecipeCache;
-
-import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.network.packet.s2c.play.ScreenHandlerSlotUpdateS2CPacket;
-import net.minecraft.network.packet.s2c.play.InventoryS2CPacket;
-import net.minecraft.network.packet.s2c.play.RecipeBookAddS2CPacket;
-import net.minecraft.network.packet.s2c.play.RecipeBookRemoveS2CPacket;
-import net.minecraft.recipe.RecipeDisplayEntry;
-import net.minecraft.recipe.NetworkRecipeId;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.List;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
+import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
+import net.minecraft.network.protocol.game.ClientboundRecipeBookAddPacket;
+import net.minecraft.network.protocol.game.ClientboundRecipeBookRemovePacket;
+import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 import java.util.ArrayList;
 
 /**
@@ -23,17 +22,17 @@ import java.util.ArrayList;
  * 1. Capture recipe data from the server into our RecipeCache
  * 2. Forward inventory updates to AutoCraftExecutor for execution timing
  */
-@Mixin(ClientPlayNetworkHandler.class)
+@Mixin(ClientPacketListener.class)
 public class ClientPlayNetworkHandlerMixin {
 
 	/**
 	 * Track slot updates to know when crafting completes
 	 */
 	@Inject(
-		method = "onScreenHandlerSlotUpdate",
+		method = "handleContainerSetSlot",
 		at = @At("TAIL")
 	)
-	private void onSlotUpdate(ScreenHandlerSlotUpdateS2CPacket packet, CallbackInfo ci) {
+	private void onSlotUpdate(ClientboundContainerSetSlotPacket packet, CallbackInfo ci) {
 		AutoCraftExecutor.onInventoryUpdate();
 	}
 
@@ -41,10 +40,10 @@ public class ClientPlayNetworkHandlerMixin {
 	 * Track full inventory syncs
 	 */
 	@Inject(
-		method = "onInventory",
+		method = "handleContainerContent",
 		at = @At("TAIL")
 	)
-	private void onInventorySync(InventoryS2CPacket packet, CallbackInfo ci) {
+	private void onInventorySync(ClientboundContainerSetContentPacket packet, CallbackInfo ci) {
 		AutoCraftExecutor.onInventoryUpdate();
 	}
 
@@ -53,10 +52,10 @@ public class ClientPlayNetworkHandlerMixin {
 	 * This is the key hook for our custom recipe cache.
 	 */
 	@Inject(
-		method = "onRecipeBookAdd",
+		method = "handleRecipeBookAdd",
 		at = @At("TAIL")
 	)
-	private void onRecipeBookAdd(RecipeBookAddS2CPacket packet, CallbackInfo ci) {
+	private void onRecipeBookAdd(ClientboundRecipeBookAddPacket packet, CallbackInfo ci) {
 		// If replace is true, clear our cache first
 		if (packet.replace()) {
 			RecipeCache.clear();
@@ -64,7 +63,7 @@ public class ClientPlayNetworkHandlerMixin {
 
 		// Extract all recipe display entries from the packet
 		List<RecipeDisplayEntry> entries = new ArrayList<>();
-		for (RecipeBookAddS2CPacket.Entry entry : packet.entries()) {
+		for (ClientboundRecipeBookAddPacket.Entry entry : packet.entries()) {
 			entries.add(entry.contents());
 		}
 
@@ -76,11 +75,11 @@ public class ClientPlayNetworkHandlerMixin {
 	 * Handle recipe removal
 	 */
 	@Inject(
-		method = "onRecipeBookRemove",
+		method = "handleRecipeBookRemove",
 		at = @At("TAIL")
 	)
-	private void onRecipeBookRemove(RecipeBookRemoveS2CPacket packet, CallbackInfo ci) {
-		for (NetworkRecipeId id : packet.recipes()) {
+	private void onRecipeBookRemove(ClientboundRecipeBookRemovePacket packet, CallbackInfo ci) {
+		for (RecipeDisplayId id : packet.recipes()) {
 			RecipeCache.removeRecipe(id);
 		}
 	}

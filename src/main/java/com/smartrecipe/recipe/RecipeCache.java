@@ -2,25 +2,24 @@ package com.smartrecipe.recipe;
 
 import com.smartrecipe.SmartRecipeBookMod;
 import com.smartrecipe.mixin.ServerRecipeManagerAccessor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.recipebook.RecipeResultCollection;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.recipe.NetworkRecipeId;
-import net.minecraft.recipe.RecipeDisplayEntry;
-import net.minecraft.recipe.ServerRecipeManager;
-import net.minecraft.recipe.book.RecipeBookCategory;
-import net.minecraft.recipe.book.RecipeBookCategories;
-import net.minecraft.recipe.display.FurnaceRecipeDisplay;
-import net.minecraft.recipe.display.RecipeDisplay;
-import net.minecraft.recipe.display.ShapedCraftingRecipeDisplay;
-import net.minecraft.recipe.display.ShapelessCraftingRecipeDisplay;
-import net.minecraft.recipe.display.SlotDisplayContexts;
-import net.minecraft.util.context.ContextParameterMap;
-import net.minecraft.world.World;
-
 import java.util.*;
 import java.util.stream.Collectors;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
+import net.minecraft.util.context.ContextMap;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.RecipeBookCategories;
+import net.minecraft.world.item.crafting.RecipeBookCategory;
+import net.minecraft.world.item.crafting.RecipeManager;
+import net.minecraft.world.item.crafting.display.FurnaceRecipeDisplay;
+import net.minecraft.world.item.crafting.display.RecipeDisplay;
+import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
+import net.minecraft.world.item.crafting.display.ShapedCraftingRecipeDisplay;
+import net.minecraft.world.item.crafting.display.ShapelessCraftingRecipeDisplay;
+import net.minecraft.world.item.crafting.display.SlotDisplayContext;
+import net.minecraft.world.level.Level;
 
 /**
  * Primary recipe store that bypasses vanilla ClientRecipeBook.
@@ -28,11 +27,11 @@ import java.util.stream.Collectors;
  */
 public class RecipeCache {
 
-	private static final Map<NetworkRecipeId, RecipeDisplayEntry> recipes = new HashMap<>();
+	private static final Map<RecipeDisplayId, RecipeDisplayEntry> recipes = new HashMap<>();
 
 	// Cached UI collections (rebuilt when recipes change)
-	private static List<RecipeResultCollection> cachedCollections = null;
-	private static Map<RecipeBookCategory, List<RecipeResultCollection>> cachedByCategory = null;
+	private static List<RecipeCollection> cachedCollections = null;
+	private static Map<RecipeBookCategory, List<RecipeCollection>> cachedByCategory = null;
 
 	// Index: result item → recipes that produce it
 	private static Map<Item, List<RecipeDisplayEntry>> recipesByResult = new HashMap<>();
@@ -62,12 +61,12 @@ public class RecipeCache {
 		invalidateCache();
 	}
 
-	public static void removeRecipe(NetworkRecipeId id) {
+	public static void removeRecipe(RecipeDisplayId id) {
 		recipes.remove(id);
 		invalidateCache();
 	}
 
-	public static RecipeDisplayEntry getRecipe(NetworkRecipeId id) {
+	public static RecipeDisplayEntry getRecipe(RecipeDisplayId id) {
 		return recipes.get(id);
 	}
 
@@ -83,14 +82,14 @@ public class RecipeCache {
 		return !recipes.isEmpty();
 	}
 
-	public static List<RecipeResultCollection> getOrderedResults() {
+	public static List<RecipeCollection> getOrderedResults() {
 		if (cachedCollections == null) {
 			rebuildCollections();
 		}
 		return cachedCollections;
 	}
 
-	public static List<RecipeResultCollection> getResultsByCategory(RecipeBookCategory category) {
+	public static List<RecipeCollection> getResultsByCategory(RecipeBookCategory category) {
 		if (cachedByCategory == null) {
 			rebuildCollections();
 		}
@@ -101,7 +100,7 @@ public class RecipeCache {
 	 * Find recipes that produce a given item.
 	 * Rebuilds the result index lazily if it was invalidated.
 	 */
-	public static List<RecipeDisplayEntry> findRecipesForItem(Item item, World world) {
+	public static List<RecipeDisplayEntry> findRecipesForItem(Item item, Level world) {
 		if (recipesByResult.isEmpty() && !recipes.isEmpty()) {
 			rebuildResultMapping(world);
 		}
@@ -111,7 +110,7 @@ public class RecipeCache {
 	/**
 	 * Find any crafting recipe (shaped or shapeless) that produces the given item.
 	 */
-	public static RecipeDisplayEntry findCraftingRecipeForItem(Item item, World world) {
+	public static RecipeDisplayEntry findCraftingRecipeForItem(Item item, Level world) {
 		for (RecipeDisplayEntry entry : findRecipesForItem(item, world)) {
 			RecipeDisplay display = entry.display();
 			if (display instanceof ShapedCraftingRecipeDisplay ||
@@ -128,15 +127,15 @@ public class RecipeCache {
 		recipesByResult.clear();
 	}
 
-	private static void rebuildResultMapping(World world) {
+	private static void rebuildResultMapping(Level world) {
 		recipesByResult.clear();
 		if (world == null) return;
 
-		ContextParameterMap contextParams = SlotDisplayContexts.createParameters(world);
+		ContextMap contextParams = SlotDisplayContext.fromLevel(world);
 
 		for (RecipeDisplayEntry entry : recipes.values()) {
 			try {
-				List<ItemStack> results = entry.getStacks(contextParams);
+				List<ItemStack> results = entry.resultItems(contextParams);
 				if (!results.isEmpty() && !results.get(0).isEmpty()) {
 					Item resultItem = results.get(0).getItem();
 					recipesByResult.computeIfAbsent(resultItem, k -> new ArrayList<>()).add(entry);
@@ -162,16 +161,16 @@ public class RecipeCache {
 				.add(entry);
 		}
 
-		List<RecipeResultCollection> allCollections = new ArrayList<>();
-		Map<RecipeBookCategory, List<RecipeResultCollection>> byCategory = new LinkedHashMap<>();
+		List<RecipeCollection> allCollections = new ArrayList<>();
+		Map<RecipeBookCategory, List<RecipeCollection>> byCategory = new LinkedHashMap<>();
 
 		for (Map.Entry<RecipeBookCategory, Map<Integer, List<RecipeDisplayEntry>>> categoryEntry : categorized.entrySet()) {
 			RecipeBookCategory category = categoryEntry.getKey();
-			List<RecipeResultCollection> categoryCollections = new ArrayList<>();
+			List<RecipeCollection> categoryCollections = new ArrayList<>();
 
 			for (List<RecipeDisplayEntry> group : categoryEntry.getValue().values()) {
 				if (!group.isEmpty()) {
-					RecipeResultCollection collection = new RecipeResultCollection(group);
+					RecipeCollection collection = new RecipeCollection(group);
 					allCollections.add(collection);
 					categoryCollections.add(collection);
 				}
@@ -233,7 +232,7 @@ public class RecipeCache {
 		return result;
 	}
 
-	public static RecipeDisplayEntry findFurnaceRecipeForItem(Item item, World world) {
+	public static RecipeDisplayEntry findFurnaceRecipeForItem(Item item, Level world) {
 		for (RecipeDisplayEntry entry : findRecipesForItem(item, world)) {
 			if (entry.display() instanceof FurnaceRecipeDisplay) {
 				return entry;
@@ -242,7 +241,7 @@ public class RecipeCache {
 		return null;
 	}
 
-	public static List<RecipeDisplayEntry> findAllFurnaceRecipesForItem(Item item, World world) {
+	public static List<RecipeDisplayEntry> findAllFurnaceRecipesForItem(Item item, Level world) {
 		List<RecipeDisplayEntry> furnaceRecipes = new ArrayList<>();
 		for (RecipeDisplayEntry entry : findRecipesForItem(item, world)) {
 			if (entry.display() instanceof FurnaceRecipeDisplay) {
@@ -259,18 +258,18 @@ public class RecipeCache {
 	 * Bypasses the recipe book unlock system to show all recipes.
 	 */
 	public static void loadFromIntegratedServer() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client.getServer() == null) return;
+		Minecraft client = Minecraft.getInstance();
+		if (client.getSingleplayerServer() == null) return;
 
 		try {
-			ServerRecipeManager recipeManager = client.getServer().getRecipeManager();
+			RecipeManager recipeManager = client.getSingleplayerServer().getRecipeManager();
 			ServerRecipeManagerAccessor accessor = (ServerRecipeManagerAccessor) recipeManager;
-			List<ServerRecipeManager.ServerRecipe> serverRecipes = accessor.getRecipes();
+			List<RecipeManager.ServerDisplayInfo> serverRecipes = accessor.getRecipes();
 
 			if (serverRecipes == null || serverRecipes.isEmpty()) return;
 
 			recipes.clear();
-			for (ServerRecipeManager.ServerRecipe serverRecipe : serverRecipes) {
+			for (RecipeManager.ServerDisplayInfo serverRecipe : serverRecipes) {
 				RecipeDisplayEntry entry = serverRecipe.display();
 				recipes.put(entry.id(), entry);
 			}

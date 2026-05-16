@@ -3,11 +3,6 @@ package com.smartrecipe.mixin;
 import com.smartrecipe.SmartRecipeBookMod;
 import com.smartrecipe.recipe.RecipeTreeCalculator;
 import com.smartrecipe.recipe.CraftingPlan;
-
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.recipebook.RecipeResultCollection;
-import net.minecraft.recipe.NetworkRecipeId;
-
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -16,6 +11,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.HashMap;
 import java.util.Map;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 
 /**
  * Extends vanilla craftability checks to account for sub-crafting.
@@ -25,11 +23,11 @@ import java.util.Map;
  * Results are cached with a short TTL to avoid running calculatePlan
  * on every recipe every frame.
  */
-@Mixin(RecipeResultCollection.class)
+@Mixin(RecipeCollection.class)
 public class RecipeResultCollectionMixin {
 
 	@Unique
-	private static final Map<NetworkRecipeId, Boolean> craftabilityCache = new HashMap<>();
+	private static final Map<RecipeDisplayId, Boolean> craftabilityCache = new HashMap<>();
 
 	@Unique
 	private static long lastCacheClear = 0;
@@ -43,7 +41,7 @@ public class RecipeResultCollectionMixin {
 		at = @At("RETURN"),
 		cancellable = true
 	)
-	private void onIsCraftable(NetworkRecipeId recipeId, CallbackInfoReturnable<Boolean> cir) {
+	private void onIsCraftable(RecipeDisplayId recipeId, CallbackInfoReturnable<Boolean> cir) {
 		if (cir.getReturnValue()) {
 			return;
 		}
@@ -61,7 +59,7 @@ public class RecipeResultCollectionMixin {
 			return;
 		}
 
-		MinecraftClient client = MinecraftClient.getInstance();
+		Minecraft client = Minecraft.getInstance();
 		if (client == null || client.player == null) {
 			return;
 		}
@@ -83,7 +81,7 @@ public class RecipeResultCollectionMixin {
 	 * Clear the craftability cache (e.g., when inventory changes significantly).
 	 */
 	@Unique
-	public static void clearCache() {
+	private static void clearCache() {
 		craftabilityCache.clear();
 		lastCacheClear = 0;
 	}

@@ -5,30 +5,25 @@ import com.smartrecipe.crafting.AutoCraftExecutor;
 import com.smartrecipe.recipe.CraftingPlan;
 import com.smartrecipe.recipe.RecipeCache;
 import com.smartrecipe.recipe.RecipeTreeCalculator;
-
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.CraftingScreen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.gui.screen.recipebook.RecipeResultCollection;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.recipe.NetworkRecipeId;
-import net.minecraft.recipe.RecipeDisplayEntry;
-import net.minecraft.recipe.display.FurnaceRecipeDisplay;
-import net.minecraft.recipe.display.RecipeDisplay;
-import net.minecraft.recipe.display.ShapedCraftingRecipeDisplay;
-import net.minecraft.recipe.display.ShapelessCraftingRecipeDisplay;
-import net.minecraft.recipe.display.SlotDisplayContexts;
 import com.smartrecipe.recipe.CraftCountTracker;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.context.ContextParameterMap;
-
 import java.util.*;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.CraftingScreen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.context.ContextMap;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.display.FurnaceRecipeDisplay;
+import net.minecraft.world.item.crafting.display.RecipeDisplay;
+import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
+import net.minecraft.world.item.crafting.display.ShapedCraftingRecipeDisplay;
+import net.minecraft.world.item.crafting.display.ShapelessCraftingRecipeDisplay;
+import net.minecraft.world.item.crafting.display.SlotDisplayContext;
 
 /**
  * Custom recipe book screen that shows only craftable recipes.
@@ -56,12 +51,12 @@ public class SmartRecipeBookScreen extends Screen {
 	private Map<Item, Integer> playerInventory = new HashMap<>();
 
 	// Cache for recursive craftability checks (expensive to compute)
-	private Map<NetworkRecipeId, Boolean> craftabilityCache = new HashMap<>();
+	private Map<RecipeDisplayId, Boolean> craftabilityCache = new HashMap<>();
 
 	// UI components
-	private TextFieldWidget searchField;
-	private ButtonWidget prevPageButton;
-	private ButtonWidget nextPageButton;
+	private EditBox searchField;
+	private Button prevPageButton;
+	private Button nextPageButton;
 
 	// Hover state
 	private RecipeDisplayEntry hoveredRecipe = null;
@@ -72,7 +67,7 @@ public class SmartRecipeBookScreen extends Screen {
 	}
 
 	public SmartRecipeBookScreen(Screen parent, RecipeMode mode) {
-		super(Text.literal("Smart Recipe Book"));
+		super(Component.literal("Smart Recipe Book"));
 		this.parent = parent;
 		this.recipeMode = mode;
 
@@ -127,39 +122,39 @@ public class SmartRecipeBookScreen extends Screen {
 		int gridY = 50;
 
 		// Search field
-		searchField = new TextFieldWidget(
-			this.textRenderer,
+		searchField = new EditBox(
+			this.font,
 			gridX,
 			25,
 			gridWidth,
 			18,
-			Text.literal("Search...")
+			Component.literal("Search...")
 		);
-		searchField.setPlaceholder(Text.literal("Search recipes..."));
-		searchField.setChangedListener(this::onSearchChanged);
-		this.addDrawableChild(searchField);
+		searchField.setHint(Component.literal("Search recipes..."));
+		searchField.setResponder(this::onSearchChanged);
+		this.addRenderableWidget(searchField);
 
 		// Page navigation
 		int navY = gridY + gridHeight + 10;
 
-		prevPageButton = ButtonWidget.builder(
-			Text.literal("<"),
+		prevPageButton = Button.builder(
+			Component.literal("<"),
 			button -> previousPage()
-		).dimensions(gridX, navY, 30, 20).build();
-		this.addDrawableChild(prevPageButton);
+		).bounds(gridX, navY, 30, 20).build();
+		this.addRenderableWidget(prevPageButton);
 
-		nextPageButton = ButtonWidget.builder(
-			Text.literal(">"),
+		nextPageButton = Button.builder(
+			Component.literal(">"),
 			button -> nextPage()
-		).dimensions(gridX + gridWidth - 30, navY, 30, 20).build();
-		this.addDrawableChild(nextPageButton);
+		).bounds(gridX + gridWidth - 30, navY, 30, 20).build();
+		this.addRenderableWidget(nextPageButton);
 
 		// Close button (X) in top-right corner
-		ButtonWidget closeButton = ButtonWidget.builder(
-			Text.literal("X"),
-			button -> close()
-		).dimensions(gridX + gridWidth - 20, 5, 20, 18).build();
-		this.addDrawableChild(closeButton);
+		Button closeButton = Button.builder(
+			Component.literal("X"),
+			button -> onClose()
+		).bounds(gridX + gridWidth - 20, 5, 20, 18).build();
+		this.addRenderableWidget(closeButton);
 
 		// Apply filter - this filters to only show craftable recipes
 		applyFilters();
@@ -204,8 +199,8 @@ public class SmartRecipeBookScreen extends Screen {
 	}
 
 	private void updateInventory() {
-		if (client != null && client.player != null) {
-			playerInventory = RecipeTreeCalculator.getInventoryContents(client.player);
+		if (minecraft != null && minecraft.player != null) {
+			playerInventory = RecipeTreeCalculator.getInventoryContents(minecraft.player);
 		}
 	}
 
@@ -218,9 +213,9 @@ public class SmartRecipeBookScreen extends Screen {
 	private void applyFilters() {
 		displayedRecipes = new ArrayList<>();
 
-		if (client == null || client.world == null) return;
+		if (minecraft == null || minecraft.level == null) return;
 
-		ContextParameterMap contextParams = SlotDisplayContexts.createParameters(client.world);
+		ContextMap contextParams = SlotDisplayContext.fromLevel(minecraft.level);
 		updateInventory();
 
 		// Track seen items to deduplicate (show one recipe per result item)
@@ -233,12 +228,12 @@ public class SmartRecipeBookScreen extends Screen {
 			}
 
 			// Get result item for filtering
-			List<ItemStack> results = entry.getStacks(contextParams);
+			List<ItemStack> results = entry.resultItems(contextParams);
 			if (results.isEmpty() || results.get(0).isEmpty()) continue;
 
 			ItemStack resultStack = results.get(0);
 			Item resultItem = resultStack.getItem();
-			String itemName = resultStack.getName().getString().toLowerCase();
+			String itemName = resultStack.getHoverName().getString().toLowerCase();
 
 			// Apply search filter only - craftability is checked on hover
 			if (!searchQuery.isEmpty() && !itemName.contains(searchQuery)) {
@@ -255,10 +250,10 @@ public class SmartRecipeBookScreen extends Screen {
 		}
 
 		// Sort by craft statistics (most crafted first)
-		final ContextParameterMap sortContext = contextParams;
+		final ContextMap sortContext = contextParams;
 		displayedRecipes.sort((a, b) -> {
-			Item itemA = a.getStacks(sortContext).get(0).getItem();
-			Item itemB = b.getStacks(sortContext).get(0).getItem();
+			Item itemA = a.resultItems(sortContext).get(0).getItem();
+			Item itemB = b.resultItems(sortContext).get(0).getItem();
 			int countA = getCraftedCount(itemA);
 			int countB = getCraftedCount(itemB);
 			return Integer.compare(countB, countA); // Descending order
@@ -294,7 +289,7 @@ public class SmartRecipeBookScreen extends Screen {
 	 * including recursive sub-crafting of ingredients.
 	 * Uses caching to avoid recalculating expensive checks.
 	 */
-	private boolean canCraftRecipeRecursive(RecipeDisplayEntry entry, ContextParameterMap contextParams) {
+	private boolean canCraftRecipeRecursive(RecipeDisplayEntry entry, ContextMap contextParams) {
 		// Check cache first
 		Boolean cached = craftabilityCache.get(entry.id());
 		if (cached != null) {
@@ -303,26 +298,26 @@ public class SmartRecipeBookScreen extends Screen {
 
 		// Use RecipeTreeCalculator to check if we can craft this recipe
 		// It already handles recursive dependency checking
-		if (client == null) {
+		if (minecraft == null) {
 			craftabilityCache.put(entry.id(), false);
 			return false;
 		}
 
-		CraftingPlan plan = RecipeTreeCalculator.calculatePlan(client, entry.id());
+		CraftingPlan plan = RecipeTreeCalculator.calculatePlan(minecraft, entry.id());
 		boolean canCraft = plan != null && plan.canCraft();
 
 		craftabilityCache.put(entry.id(), canCraft);
 		return canCraft;
 	}
 
-	private boolean canCraftRecipeDirect(RecipeDisplayEntry entry, ContextParameterMap contextParams) {
+	private boolean canCraftRecipeDirect(RecipeDisplayEntry entry, ContextMap contextParams) {
 		return RecipeTreeCalculator.canCraftDirect(entry.display(), contextParams, playerInventory);
 	}
 
 	/**
 	 * Check if we have the ingredient for a furnace recipe
 	 */
-	private boolean canSmeltRecipe(RecipeDisplayEntry entry, ContextParameterMap contextParams) {
+	private boolean canSmeltRecipe(RecipeDisplayEntry entry, ContextMap contextParams) {
 		RecipeDisplay display = entry.display();
 
 		if (!(display instanceof FurnaceRecipeDisplay furnaceDisplay)) {
@@ -330,7 +325,7 @@ public class SmartRecipeBookScreen extends Screen {
 		}
 
 		// Get the ingredient slot
-		List<ItemStack> possibleIngredients = furnaceDisplay.ingredient().getStacks(contextParams);
+		List<ItemStack> possibleIngredients = furnaceDisplay.ingredient().resolveForStacks(contextParams);
 		if (possibleIngredients.isEmpty()) return false;
 
 		// Check if we have any of the possible ingredients
@@ -369,15 +364,15 @@ public class SmartRecipeBookScreen extends Screen {
 	}
 
 	@Override
-	public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+	public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
 		// Draw dark background
 		context.fill(0, 0, this.width, this.height, 0xC0101010);
 
-		super.render(context, mouseX, mouseY, delta);
+		super.extractRenderState(context, mouseX, mouseY, delta);
 
-		if (client == null || client.world == null) return;
+		if (minecraft == null || minecraft.level == null) return;
 
-		ContextParameterMap contextParams = SlotDisplayContexts.createParameters(client.world);
+		ContextMap contextParams = SlotDisplayContext.fromLevel(minecraft.level);
 
 		// Calculate grid position
 		int gridWidth = RECIPES_PER_ROW * (SLOT_SIZE + SLOT_SPACING);
@@ -391,9 +386,9 @@ public class SmartRecipeBookScreen extends Screen {
 		} else {
 			modeLabel = craftingGridSize == 3 ? "3x3 Crafting Table" : "2x2 Inventory";
 		}
-		context.drawCenteredTextWithShadow(
-			this.textRenderer,
-			Text.literal("Recipes - " + modeLabel + " (" + displayedRecipes.size() + ")"),
+		context.centeredText(
+			this.font,
+			Component.literal("Recipes - " + modeLabel + " (" + displayedRecipes.size() + ")"),
 			this.width / 2,
 			8,
 			0xFFFFFF
@@ -401,9 +396,9 @@ public class SmartRecipeBookScreen extends Screen {
 
 		// Draw page info
 		int totalPages = Math.max(1, (displayedRecipes.size() + RECIPES_PER_PAGE - 1) / RECIPES_PER_PAGE);
-		context.drawCenteredTextWithShadow(
-			this.textRenderer,
-			Text.literal("Page " + (currentPage + 1) + " / " + totalPages),
+		context.centeredText(
+			this.font,
+			Component.literal("Page " + (currentPage + 1) + " / " + totalPages),
 			this.width / 2,
 			gridY + ROWS_PER_PAGE * (SLOT_SIZE + SLOT_SPACING) + 15,
 			0xAAAAAA
@@ -422,7 +417,7 @@ public class SmartRecipeBookScreen extends Screen {
 			int slotY = gridY + row * (SLOT_SIZE + SLOT_SPACING);
 
 			RecipeDisplayEntry entry = displayedRecipes.get(startIndex + i);
-			List<ItemStack> results = entry.getStacks(contextParams);
+			List<ItemStack> results = entry.resultItems(contextParams);
 			if (results.isEmpty()) continue;
 
 			ItemStack resultStack = results.get(0);
@@ -450,56 +445,56 @@ public class SmartRecipeBookScreen extends Screen {
 			// Draw item
 			int itemX = slotX + (SLOT_SIZE - 16) / 2;
 			int itemY = slotY + (SLOT_SIZE - 16) / 2;
-			context.drawItem(resultStack, itemX, itemY);
+			context.item(resultStack, itemX, itemY);
 
 			// Draw count if > 1
 			if (resultStack.getCount() > 1) {
-				context.drawStackOverlay(this.textRenderer, resultStack, itemX, itemY);
+				context.itemDecorations(this.font, resultStack, itemX, itemY);
 			}
 		}
 
 		// Draw tooltip for hovered recipe with craftability info
 		if (hoveredRecipe != null) {
-			List<ItemStack> results = hoveredRecipe.getStacks(contextParams);
+			List<ItemStack> results = hoveredRecipe.resultItems(contextParams);
 			if (!results.isEmpty()) {
 				// Build custom tooltip with craftability info
-				List<Text> tooltip = new ArrayList<>();
-				tooltip.add(results.get(0).getName());
+				List<Component> tooltip = new ArrayList<>();
+				tooltip.add(results.get(0).getHoverName());
 
 				if (recipeMode.isFurnaceType()) {
 					boolean hasIngredient = canSmeltRecipe(hoveredRecipe, contextParams);
 					if (hasIngredient) {
-						tooltip.add(Text.literal("✓ Can smelt now").formatted(Formatting.GREEN));
+						tooltip.add(Component.literal("✓ Can smelt now").withStyle(ChatFormatting.GREEN));
 					} else {
-						tooltip.add(Text.literal("✗ Missing ingredient").formatted(Formatting.RED));
+						tooltip.add(Component.literal("✗ Missing ingredient").withStyle(ChatFormatting.RED));
 					}
 				} else {
 					boolean directlyCraftable = canCraftRecipeDirect(hoveredRecipe, contextParams);
 					if (directlyCraftable) {
-						tooltip.add(Text.literal("✓ Can craft now").formatted(Formatting.GREEN));
+						tooltip.add(Component.literal("✓ Can craft now").withStyle(ChatFormatting.GREEN));
 					} else {
 						Boolean cached = craftabilityCache.get(hoveredRecipe.id());
 						if (cached == null) {
-							CraftingPlan plan = RecipeTreeCalculator.calculatePlan(client, hoveredRecipe.id());
+							CraftingPlan plan = RecipeTreeCalculator.calculatePlan(minecraft, hoveredRecipe.id());
 							cached = plan != null && plan.canCraft();
 							craftabilityCache.put(hoveredRecipe.id(), cached);
 						}
 
 						if (cached) {
-							tooltip.add(Text.literal("⚡ Requires sub-crafting").formatted(Formatting.YELLOW));
+							tooltip.add(Component.literal("⚡ Requires sub-crafting").withStyle(ChatFormatting.YELLOW));
 						} else {
-							tooltip.add(Text.literal("✗ Missing materials").formatted(Formatting.RED));
+							tooltip.add(Component.literal("✗ Missing materials").withStyle(ChatFormatting.RED));
 						}
 					}
 				}
 
-				context.drawTooltip(this.textRenderer, tooltip, mouseX, mouseY);
+				context.setComponentTooltipForNextFrame(this.font, tooltip, mouseX, mouseY);
 			}
 		}
 	}
 
 	@Override
-	public boolean mouseClicked(net.minecraft.client.gui.Click click, boolean consumed) {
+	public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent click, boolean consumed) {
 		if (super.mouseClicked(click, consumed)) {
 			return true;
 		}
@@ -514,15 +509,15 @@ public class SmartRecipeBookScreen extends Screen {
 	}
 
 	private void openRecipePreview(RecipeDisplayEntry entry) {
-		if (client == null) return;
-		client.setScreen(new RecipePreviewScreen(this, entry, craftingGridSize));
+		if (minecraft == null) return;
+		minecraft.setScreen(new RecipePreviewScreen(this, entry, craftingGridSize));
 	}
 
 	@Override
-	public boolean keyPressed(net.minecraft.client.input.KeyInput keyInput) {
+	public boolean keyPressed(net.minecraft.client.input.KeyEvent keyInput) {
 		// Close on escape
 		if (keyInput.key() == 256) { // ESC
-			close();
+			onClose();
 			return true;
 		}
 
@@ -535,8 +530,8 @@ public class SmartRecipeBookScreen extends Screen {
 	}
 
 	@Override
-	public void close() {
-		this.client.setScreen(parent);
+	public void onClose() {
+		this.minecraft.setScreen(parent);
 	}
 
 	@Override
@@ -545,7 +540,7 @@ public class SmartRecipeBookScreen extends Screen {
 	}
 
 	@Override
-	public boolean shouldPause() {
+	public boolean isPauseScreen() {
 		return false;
 	}
 

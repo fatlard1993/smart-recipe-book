@@ -1,10 +1,9 @@
 package com.smartrecipe.recipe;
 
-import net.minecraft.item.ItemStack;
-import net.minecraft.recipe.NetworkRecipeId;
-
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 
 /**
  * Represents a plan to craft an item, potentially with multiple steps
@@ -12,11 +11,11 @@ import java.util.List;
  */
 public class CraftingPlan {
 	private final List<CraftingStep> steps;
-	private final NetworkRecipeId targetRecipe;
+	private final RecipeDisplayId targetRecipe;
 	private final ItemStack targetItem;
 	private boolean canCraft = true;
 
-	public CraftingPlan(NetworkRecipeId targetRecipe, ItemStack targetItem) {
+	public CraftingPlan(RecipeDisplayId targetRecipe, ItemStack targetItem) {
 		this.steps = new ArrayList<>();
 		this.targetRecipe = targetRecipe;
 		this.targetItem = targetItem;
@@ -38,7 +37,7 @@ public class CraftingPlan {
 		return steps;
 	}
 
-	public NetworkRecipeId getTargetRecipe() {
+	public RecipeDisplayId getTargetRecipe() {
 		return targetRecipe;
 	}
 
@@ -55,15 +54,15 @@ public class CraftingPlan {
 	}
 
 	public static class CraftingStep {
-		private final NetworkRecipeId recipeId;
+		private final RecipeDisplayId recipeId;
 		private final ItemStack result;
 
-		public CraftingStep(NetworkRecipeId recipeId, ItemStack result) {
+		public CraftingStep(RecipeDisplayId recipeId, ItemStack result) {
 			this.recipeId = recipeId;
 			this.result = result;
 		}
 
-		public NetworkRecipeId getRecipeId() {
+		public RecipeDisplayId getRecipeId() {
 			return recipeId;
 		}
 

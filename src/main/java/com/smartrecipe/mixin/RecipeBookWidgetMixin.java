@@ -2,13 +2,11 @@ package com.smartrecipe.mixin;
 
 import com.smartrecipe.crafting.AutoCraftExecutor;
 import com.smartrecipe.recipe.RecipeTreeCalculator;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
+import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 import com.smartrecipe.recipe.CraftingPlan;
-
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.recipebook.RecipeBookWidget;
-import net.minecraft.client.gui.screen.recipebook.RecipeResultCollection;
-import net.minecraft.recipe.NetworkRecipeId;
-
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -20,26 +18,26 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * When a recipe requires sub-crafting (e.g., sticks for a pickaxe),
  * cancels vanilla handling and delegates to AutoCraftExecutor.
  */
-@Mixin(RecipeBookWidget.class)
+@Mixin(RecipeBookComponent.class)
 public abstract class RecipeBookWidgetMixin {
 
 	@Shadow
-	protected MinecraftClient client;
+	protected Minecraft minecraft;
 
 	@Inject(
-		method = "select",
+		method = "tryPlaceRecipe",
 		at = @At("HEAD"),
 		cancellable = true
 	)
-	private void onRecipeSelect(RecipeResultCollection results, NetworkRecipeId recipeId, boolean craftAll, CallbackInfoReturnable<Boolean> cir) {
-		if (client == null || client.player == null) return;
+	private void onRecipeSelect(RecipeCollection results, RecipeDisplayId recipeId, boolean craftAll, CallbackInfoReturnable<Boolean> cir) {
+		if (minecraft == null || minecraft.player == null) return;
 
-		CraftingPlan plan = RecipeTreeCalculator.calculatePlan(client, recipeId);
+		CraftingPlan plan = RecipeTreeCalculator.calculatePlan(minecraft, recipeId);
 		if (plan == null || !plan.requiresSubCrafting()) {
 			return;
 		}
 
 		cir.setReturnValue(true);
-		AutoCraftExecutor.execute(client, plan, 1);
+		AutoCraftExecutor.execute(minecraft, plan, 1);
 	}
 }

@@ -1,9 +1,8 @@
 package com.smartrecipe.recipe;
 
-import net.minecraft.item.Item;
-
 import java.util.HashMap;
 import java.util.Map;
+import net.minecraft.world.item.Item;
 
 /**
  * Tracks how many times each item has been crafted this session for sorting purposes.

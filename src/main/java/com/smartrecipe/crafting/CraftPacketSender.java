@@ -1,27 +1,26 @@
 package com.smartrecipe.crafting;
 
 import com.smartrecipe.SmartRecipeBookMod;
-
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.network.packet.c2s.play.CraftRequestC2SPacket;
-import net.minecraft.recipe.NetworkRecipeId;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.protocol.game.ServerboundPlaceRecipePacket;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 
 /**
  * Sends crafting packets directly, bypassing the vanilla recipe book widget.
  */
 public class CraftPacketSender {
 
-	public static void sendCraftRequest(NetworkRecipeId recipeId, boolean craftAll) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client.player == null || client.getNetworkHandler() == null) {
+	public static void sendCraftRequest(RecipeDisplayId recipeId, boolean craftAll) {
+		Minecraft client = Minecraft.getInstance();
+		if (client.player == null || client.getConnection() == null) {
 			SmartRecipeBookMod.LOGGER.error("Cannot send craft request — no player or network handler");
 			return;
 		}
 
-		int syncId = client.player.currentScreenHandler.syncId;
+		int syncId = client.player.containerMenu.containerId;
 
 		SmartRecipeBookMod.LOGGER.debug("CraftRequest: {} (syncId={}, craftAll={})", recipeId, syncId, craftAll);
-		CraftRequestC2SPacket packet = new CraftRequestC2SPacket(syncId, recipeId, craftAll);
-		client.getNetworkHandler().sendPacket(packet);
+		ServerboundPlaceRecipePacket packet = new ServerboundPlaceRecipePacket(syncId, recipeId, craftAll);
+		client.getConnection().send(packet);
 	}
 }

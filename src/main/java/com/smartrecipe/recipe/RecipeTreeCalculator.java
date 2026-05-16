@@ -1,21 +1,19 @@
 package com.smartrecipe.recipe;
 
 import com.smartrecipe.SmartRecipeBookMod;
-
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.recipe.NetworkRecipeId;
-import net.minecraft.recipe.RecipeDisplayEntry;
-import net.minecraft.recipe.display.RecipeDisplay;
-import net.minecraft.recipe.display.ShapedCraftingRecipeDisplay;
-import net.minecraft.recipe.display.ShapelessCraftingRecipeDisplay;
-import net.minecraft.recipe.display.SlotDisplay;
-import net.minecraft.recipe.display.SlotDisplayContexts;
-import net.minecraft.util.context.ContextParameterMap;
-
 import java.util.*;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.util.context.ContextMap;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.display.RecipeDisplay;
+import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
+import net.minecraft.world.item.crafting.display.ShapedCraftingRecipeDisplay;
+import net.minecraft.world.item.crafting.display.ShapelessCraftingRecipeDisplay;
+import net.minecraft.world.item.crafting.display.SlotDisplay;
+import net.minecraft.world.item.crafting.display.SlotDisplayContext;
 
 /**
  * Calculates the crafting tree needed to make an item,
@@ -42,8 +40,8 @@ public class RecipeTreeCalculator {
 	 * @param recipeId The recipe to craft
 	 * @return A CraftingPlan, or null if no special handling needed
 	 */
-	public static CraftingPlan calculatePlan(MinecraftClient client, NetworkRecipeId recipeId) {
-		if (client.player == null || client.world == null) return null;
+	public static CraftingPlan calculatePlan(Minecraft client, RecipeDisplayId recipeId) {
+		if (client.player == null || client.level == null) return null;
 
 		RecipeDisplayEntry entry = RecipeCache.getRecipe(recipeId);
 		if (entry == null) return null;
@@ -55,7 +53,7 @@ public class RecipeTreeCalculator {
 		}
 
 		Map<Item, Integer> inventory = getInventoryContents(client.player);
-		ContextParameterMap contextParams = SlotDisplayContexts.createParameters(client.world);
+		ContextMap contextParams = SlotDisplayContext.fromLevel(client.level);
 		ItemStack resultStack = getResultItem(display, contextParams);
 
 		CraftingPlan plan = new CraftingPlan(recipeId, resultStack);
@@ -75,7 +73,7 @@ public class RecipeTreeCalculator {
 		plan.addStep(new CraftingPlan.CraftingStep(recipeId, resultStack));
 
 		SmartRecipeBookMod.LOGGER.debug("Plan for {}: {} steps, canCraft={}",
-			resultStack.getName().getString(), plan.getSteps().size(), plan.canCraft());
+			resultStack.getHoverName().getString(), plan.getSteps().size(), plan.canCraft());
 
 		return plan;
 	}
@@ -84,12 +82,12 @@ public class RecipeTreeCalculator {
 	 * Recursively calculate dependencies for a recipe
 	 */
 	private static boolean calculateDependencies(
-			MinecraftClient client,
+			Minecraft client,
 			RecipeDisplayEntry entry,
 			Map<Item, Integer> inventory,
 			Set<Item> visited,
 			List<CraftingPlan.CraftingStep> steps,
-			ContextParameterMap contextParams,
+			ContextMap contextParams,
 			int depth) {
 
 		if (depth > MAX_RECURSION_DEPTH) {
@@ -103,7 +101,7 @@ public class RecipeTreeCalculator {
 		if (ingredients == null) return false;
 
 		for (SlotDisplay slotDisplay : ingredients) {
-			List<ItemStack> possibleStacks = slotDisplay.getStacks(contextParams);
+			List<ItemStack> possibleStacks = slotDisplay.resolveForStacks(contextParams);
 			if (possibleStacks.isEmpty()) continue;
 
 			boolean foundIngredient = false;
@@ -157,7 +155,7 @@ public class RecipeTreeCalculator {
 		}
 	}
 
-	private static RecipeDisplayEntry findRecipeForItem(Item item, ContextParameterMap contextParams, Map<Item, Integer> inventory) {
+	private static RecipeDisplayEntry findRecipeForItem(Item item, ContextMap contextParams, Map<Item, Integer> inventory) {
 		clearCacheIfExpired();
 
 		if (recipeForItemCache.containsKey(item)) {
@@ -201,7 +199,7 @@ public class RecipeTreeCalculator {
 	 * Check if we have all ingredients to craft a recipe directly (no sub-crafting).
 	 * Simulates ingredient consumption against a copy of the given inventory.
 	 */
-	public static boolean canCraftDirect(RecipeDisplay display, ContextParameterMap contextParams, Map<Item, Integer> inventory) {
+	public static boolean canCraftDirect(RecipeDisplay display, ContextMap contextParams, Map<Item, Integer> inventory) {
 		List<SlotDisplay> ingredients = getIngredients(display);
 		if (ingredients == null) return false;
 
@@ -209,7 +207,7 @@ public class RecipeTreeCalculator {
 		Map<Item, Integer> simInventory = new HashMap<>(inventory);
 
 		for (SlotDisplay slot : ingredients) {
-			List<ItemStack> possibleIngredients = slot.getStacks(contextParams);
+			List<ItemStack> possibleIngredients = slot.resolveForStacks(contextParams);
 			if (possibleIngredients.isEmpty()) continue;
 
 			boolean foundIngredient = false;
@@ -246,7 +244,7 @@ public class RecipeTreeCalculator {
 	/**
 	 * Get the result item from a recipe display
 	 */
-	private static ItemStack getResultItem(RecipeDisplay display, ContextParameterMap contextParams) {
+	private static ItemStack getResultItem(RecipeDisplay display, ContextMap contextParams) {
 		SlotDisplay resultSlot = null;
 		if (display instanceof ShapedCraftingRecipeDisplay shaped) {
 			resultSlot = shaped.result();
@@ -255,7 +253,7 @@ public class RecipeTreeCalculator {
 		}
 
 		if (resultSlot != null) {
-			List<ItemStack> stacks = resultSlot.getStacks(contextParams);
+			List<ItemStack> stacks = resultSlot.resolveForStacks(contextParams);
 			if (!stacks.isEmpty()) {
 				return stacks.get(0);
 			}
@@ -267,18 +265,18 @@ public class RecipeTreeCalculator {
 	 * Get the contents of a player's inventory as item counts.
 	 * Includes main inventory (0-35) and offhand (40).
 	 */
-	public static Map<Item, Integer> getInventoryContents(ClientPlayerEntity player) {
+	public static Map<Item, Integer> getInventoryContents(LocalPlayer player) {
 		Map<Item, Integer> contents = new HashMap<>();
 
 		for (int i = 0; i < 36; i++) {
-			ItemStack stack = player.getInventory().getStack(i);
+			ItemStack stack = player.getInventory().getItem(i);
 			if (!stack.isEmpty()) {
 				contents.merge(stack.getItem(), stack.getCount(), Integer::sum);
 			}
 		}
 
 		// Offhand slot
-		ItemStack offhand = player.getInventory().getStack(40);
+		ItemStack offhand = player.getInventory().getItem(40);
 		if (!offhand.isEmpty()) {
 			contents.merge(offhand.getItem(), offhand.getCount(), Integer::sum);
 		}
@@ -290,8 +288,8 @@ public class RecipeTreeCalculator {
 	 * Calculate maximum craftable quantity for a recipe, considering sub-crafting.
 	 * Uses binary search to find the highest quantity that can be crafted.
 	 */
-	public static int calculateMaxCraftable(MinecraftClient client, NetworkRecipeId recipeId) {
-		if (client.player == null || client.world == null) return 1;
+	public static int calculateMaxCraftable(Minecraft client, RecipeDisplayId recipeId) {
+		if (client.player == null || client.level == null) return 1;
 
 		// Guard: if we can't even craft 1, return 0
 		if (!canCraftQuantity(client, recipeId, 1)) return 0;
@@ -312,7 +310,7 @@ public class RecipeTreeCalculator {
 	/**
 	 * Check if we can craft a specific quantity of a recipe (including sub-crafting)
 	 */
-	private static boolean canCraftQuantity(MinecraftClient client, NetworkRecipeId recipeId, int quantity) {
+	private static boolean canCraftQuantity(Minecraft client, RecipeDisplayId recipeId, int quantity) {
 		RecipeDisplayEntry entry = RecipeCache.getRecipe(recipeId);
 		if (entry == null) return false;
 
@@ -324,7 +322,7 @@ public class RecipeTreeCalculator {
 
 		// Get current inventory and simulate crafting 'quantity' times
 		Map<Item, Integer> inventory = getInventoryContents(client.player);
-		ContextParameterMap contextParams = SlotDisplayContexts.createParameters(client.world);
+		ContextMap contextParams = SlotDisplayContext.fromLevel(client.level);
 
 		// Try to "craft" quantity times
 		for (int i = 0; i < quantity; i++) {
@@ -341,11 +339,11 @@ public class RecipeTreeCalculator {
 	 * This recursively handles sub-crafting.
 	 */
 	private static boolean canCraftOnce(
-			MinecraftClient client,
+			Minecraft client,
 			RecipeDisplayEntry entry,
 			Map<Item, Integer> inventory,
 			Set<Item> visited,
-			ContextParameterMap contextParams,
+			ContextMap contextParams,
 			int depth) {
 
 		if (depth > MAX_RECURSION_DEPTH) return false;
@@ -355,7 +353,7 @@ public class RecipeTreeCalculator {
 		if (ingredients == null) return false;
 
 		for (SlotDisplay slotDisplay : ingredients) {
-			List<ItemStack> possibleStacks = slotDisplay.getStacks(contextParams);
+			List<ItemStack> possibleStacks = slotDisplay.resolveForStacks(contextParams);
 			if (possibleStacks.isEmpty()) continue;
 
 			boolean foundIngredient = false;

@@ -3,17 +3,14 @@ package com.smartrecipe.crafting;
 import com.smartrecipe.SmartRecipeBookMod;
 import com.smartrecipe.recipe.CraftCountTracker;
 import com.smartrecipe.recipe.CraftingPlan;
-
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.screen.sync.ItemStackHash;
-import net.minecraft.item.ItemStack;
-
 import java.util.ArrayList;
 import java.util.List;
-
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.HashedStack;
+import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.item.ItemStack;
 import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 
 /**
@@ -31,7 +28,7 @@ public class AutoCraftExecutor {
 	private static List<CraftingPlan.CraftingStep> steps = new ArrayList<>();
 	private static int currentStepIndex = 0;
 	private static boolean isExecuting = false;
-	private static MinecraftClient currentClient = null;
+	private static Minecraft currentClient = null;
 	private static int ticksUntilNextStep = 0;
 
 	// Fallback timeout if inventory update never arrives.
@@ -52,7 +49,7 @@ public class AutoCraftExecutor {
 	/**
 	 * Execute a crafting plan, repeating it {@code quantity} times.
 	 */
-	public static void execute(MinecraftClient client, CraftingPlan plan, int quantity) {
+	public static void execute(Minecraft client, CraftingPlan plan, int quantity) {
 		if (isExecuting) {
 			SmartRecipeBookMod.LOGGER.warn("Already executing a crafting plan");
 			return;
@@ -61,7 +58,7 @@ public class AutoCraftExecutor {
 		if (client.player == null) return;
 
 		currentClient = client;
-		initialSyncId = client.player.currentScreenHandler.syncId;
+		initialSyncId = client.player.containerMenu.containerId;
 
 		List<CraftingPlan.CraftingStep> originalSteps = plan.getSteps();
 		steps = new ArrayList<>();
@@ -94,8 +91,8 @@ public class AutoCraftExecutor {
 		}
 
 		// Abort if the screen handler changed (player closed crafting screen)
-		ScreenHandler handler = currentClient.player.currentScreenHandler;
-		if (handler == null || handler.syncId != initialSyncId) {
+		AbstractContainerMenu handler = currentClient.player.containerMenu;
+		if (handler == null || handler.containerId != initialSyncId) {
 			SmartRecipeBookMod.LOGGER.warn("Screen changed during crafting, aborting plan");
 			cancel();
 			return;
@@ -148,23 +145,23 @@ public class AutoCraftExecutor {
 	private static void clickCraftingResult() {
 		if (currentClient == null || currentClient.player == null) return;
 
-		ScreenHandler handler = currentClient.player.currentScreenHandler;
+		AbstractContainerMenu handler = currentClient.player.containerMenu;
 		if (handler == null) return;
 
-		int syncId = handler.syncId;
+		int syncId = handler.containerId;
 		short resultSlotId = 0; // Result slot is always slot 0 in crafting screens
-		int stateId = handler.getRevision();
+		int stateId = handler.getStateId();
 
-		ClickSlotC2SPacket packet = new ClickSlotC2SPacket(
+		ServerboundContainerClickPacket packet = new ServerboundContainerClickPacket(
 			syncId,
 			stateId,
 			resultSlotId,
 			(byte) 0,
-			SlotActionType.QUICK_MOVE,
+			ContainerInput.QUICK_MOVE,
 			new Int2ObjectArrayMap<>(),
-			ItemStackHash.EMPTY
+			HashedStack.EMPTY
 		);
-		currentClient.getNetworkHandler().sendPacket(packet);
+		currentClient.getConnection().send(packet);
 	}
 
 	/**
@@ -172,7 +169,7 @@ public class AutoCraftExecutor {
 	 * - An inventory update arrived (server confirmed the craft), or
 	 * - The tick timeout elapsed (fallback for missed updates).
 	 */
-	public static void onClientTick(MinecraftClient client) {
+	public static void onClientTick(Minecraft client) {
 		if (!isExecuting) return;
 
 		if (inventoryUpdated) {
