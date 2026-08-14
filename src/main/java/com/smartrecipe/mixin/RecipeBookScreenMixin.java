@@ -25,9 +25,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class RecipeBookScreenMixin {
 
 	/**
-	 * Intercept the recipe book button click handler BEFORE it toggles the vanilla recipe book.
-	 * In MC 26.1, the old lambda method_64513 was refactored into the named method
-	 * onRecipeBookButtonClick() which is called from the button press lambda in initButton().
+	 * Intercept the recipe book button click handler BEFORE it toggles the vanilla
+	 * recipe book. Targets onRecipeBookButtonClick(), which the button press lambda
+	 * in initButton() calls.
 	 */
 	@Inject(
 		method = "onRecipeBookButtonClick",
@@ -37,18 +37,17 @@ public abstract class RecipeBookScreenMixin {
 	private void onRecipeBookButtonClick(CallbackInfo ci) {
 		Minecraft client = Minecraft.getInstance();
 
-		// Determine the recipe mode based on screen type
 		RecipeMode mode;
-		if (client.screen instanceof InventoryScreen ||
-			client.screen instanceof CraftingScreen) {
+		if (client.gui.screen() instanceof InventoryScreen ||
+			client.gui.screen() instanceof CraftingScreen) {
 			mode = RecipeMode.CRAFTING;
-		} else if (client.screen instanceof BlastFurnaceScreen) {
+		} else if (client.gui.screen() instanceof BlastFurnaceScreen) {
 			mode = RecipeMode.BLAST_FURNACE;
-		} else if (client.screen instanceof SmokerScreen) {
+		} else if (client.gui.screen() instanceof SmokerScreen) {
 			mode = RecipeMode.SMOKER;
-		} else if (client.screen instanceof FurnaceScreen) {
+		} else if (client.gui.screen() instanceof FurnaceScreen) {
 			mode = RecipeMode.FURNACE;
-		} else if (client.screen instanceof AbstractFurnaceScreen) {
+		} else if (client.gui.screen() instanceof AbstractFurnaceScreen) {
 			// Fallback for any other furnace-type screens (mod compatibility)
 			mode = RecipeMode.FURNACE;
 		} else {
@@ -56,13 +55,11 @@ public abstract class RecipeBookScreenMixin {
 			return;
 		}
 
-		// Only intercept if we have recipes in our cache
 		if (!RecipeCache.hasRecipes()) {
 			return; // Let vanilla handle it
 		}
 
-		// Cancel the vanilla toggle and open our custom recipe book screen
 		ci.cancel();
-		client.setScreen(new SmartRecipeBookScreen(client.screen, mode));
+		client.gui.setScreen(new SmartRecipeBookScreen(client.gui.screen(), mode));
 	}
 }

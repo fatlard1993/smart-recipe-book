@@ -118,7 +118,7 @@ public class RecipeTreeCalculator {
 					break;
 				}
 
-				// Circular dependency — skip this ingredient option
+				// Circular dependency: skip this ingredient option
 				if (visited.contains(neededItem)) continue;
 
 				RecipeDisplayEntry subRecipe = findRecipeForItem(neededItem, contextParams, inventory);
@@ -203,7 +203,6 @@ public class RecipeTreeCalculator {
 		List<SlotDisplay> ingredients = getIngredients(display);
 		if (ingredients == null) return false;
 
-		// Create a copy of inventory to simulate consumption
 		Map<Item, Integer> simInventory = new HashMap<>(inventory);
 
 		for (SlotDisplay slot : ingredients) {
@@ -275,7 +274,6 @@ public class RecipeTreeCalculator {
 			}
 		}
 
-		// Offhand slot
 		ItemStack offhand = player.getInventory().getItem(40);
 		if (!offhand.isEmpty()) {
 			contents.merge(offhand.getItem(), offhand.getCount(), Integer::sum);
@@ -320,11 +318,9 @@ public class RecipeTreeCalculator {
 			return false;
 		}
 
-		// Get current inventory and simulate crafting 'quantity' times
 		Map<Item, Integer> inventory = getInventoryContents(client.player);
 		ContextMap contextParams = SlotDisplayContext.fromLevel(client.level);
 
-		// Try to "craft" quantity times
 		for (int i = 0; i < quantity; i++) {
 			Set<Item> visited = new HashSet<>();
 			if (!canCraftOnce(client, entry, inventory, visited, contextParams, 0)) {
@@ -364,27 +360,22 @@ public class RecipeTreeCalculator {
 				int haveCount = inventory.getOrDefault(neededItem, 0);
 
 				if (haveCount >= 1) {
-					// Consume from inventory
 					inventory.put(neededItem, haveCount - 1);
 					foundIngredient = true;
 					break;
 				}
 
-				// Need to sub-craft
 				if (visited.contains(neededItem)) continue;
 
 				RecipeDisplayEntry subRecipe = findRecipeForItem(neededItem, contextParams, inventory);
 				if (subRecipe != null) {
 					visited.add(neededItem);
 
-					// Recursively craft the sub-item
 					if (canCraftOnce(client, subRecipe, inventory, visited, contextParams, depth + 1)) {
-						// Add sub-crafted result to inventory
 						ItemStack subResult = getResultItem(subRecipe.display(), contextParams);
 						int produced = subResult.getCount();
 						inventory.merge(neededItem, produced, Integer::sum);
 
-						// Now consume what we need
 						inventory.put(neededItem, inventory.get(neededItem) - 1);
 						visited.remove(neededItem);
 						foundIngredient = true;

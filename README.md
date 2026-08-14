@@ -8,7 +8,7 @@ Open your inventory, crafting table, or any furnace and click the recipe book bu
 
 **The main idea:** If you have the raw materials to make something (even through multiple crafting steps), this mod shows it as craftable and handles the intermediate crafting for you.
 
-This is a **client-side only** mod — install it on your client, no server installation needed. In singleplayer, it shows all recipes regardless of unlock status. On multiplayer servers, it shows recipes the server has sent to your client.
+This is a **client-side only** mod: install it on your client, no server installation needed. In singleplayer, it shows all recipes regardless of unlock status. On multiplayer servers, it shows recipes the server has sent to your client.
 
 ## Features
 
@@ -54,10 +54,7 @@ Click any recipe to see:
 
 ## Requirements
 
-- Minecraft 1.21.11
-- Fabric Loader 0.18.1+
-- Fabric API
-- Java 21+
+Targets the Minecraft, Fabric Loader, and Fabric API versions declared in this mod's `gradle.properties`; check there for the exact currently-supported version. Requires the Java version declared in `fabric.mod.json`.
 
 ## Installation
 

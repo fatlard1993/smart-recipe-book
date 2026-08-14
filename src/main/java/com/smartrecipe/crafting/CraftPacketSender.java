@@ -13,7 +13,7 @@ public class CraftPacketSender {
 	public static void sendCraftRequest(RecipeDisplayId recipeId, boolean craftAll) {
 		Minecraft client = Minecraft.getInstance();
 		if (client.player == null || client.getConnection() == null) {
-			SmartRecipeBookMod.LOGGER.error("Cannot send craft request — no player or network handler");
+			SmartRecipeBookMod.LOGGER.error("Cannot send craft request: no player or network handler");
 			return;
 		}
 

@@ -33,14 +33,12 @@ import net.minecraft.world.item.crafting.display.SlotDisplayContext;
  */
 public class SmartRecipeBookScreen extends Screen {
 
-	// Grid layout constants
 	private static final int RECIPES_PER_ROW = 8;
 	private static final int ROWS_PER_PAGE = 5;
 	private static final int RECIPES_PER_PAGE = RECIPES_PER_ROW * ROWS_PER_PAGE;
 	private static final int SLOT_SIZE = 25;
 	private static final int SLOT_SPACING = 2;
 
-	// Screen state
 	private final Screen parent;
 	private final int craftingGridSize; // 2 for 2x2 inventory, 3 for 3x3 crafting table
 	private final RecipeMode recipeMode; // CRAFTING or FURNACE
@@ -53,12 +51,10 @@ public class SmartRecipeBookScreen extends Screen {
 	// Cache for recursive craftability checks (expensive to compute)
 	private Map<RecipeDisplayId, Boolean> craftabilityCache = new HashMap<>();
 
-	// UI components
 	private EditBox searchField;
 	private Button prevPageButton;
 	private Button nextPageButton;
 
-	// Hover state
 	private RecipeDisplayEntry hoveredRecipe = null;
 
 
@@ -82,7 +78,6 @@ public class SmartRecipeBookScreen extends Screen {
 	private static int detectCraftingGridSize(Screen parent) {
 		if (parent == null) return 2;
 
-		// Check vanilla screens first
 		if (parent instanceof CraftingScreen) {
 			return 3; // 3x3 crafting table
 		}
@@ -106,22 +101,18 @@ public class SmartRecipeBookScreen extends Screen {
 	protected void init() {
 		super.init();
 
-		// Load recipes from cache
 		loadRecipes();
 
-		// Update player inventory
 		updateInventory();
 
 		// Clear craftability cache when re-initializing
 		craftabilityCache.clear();
 
-		// Calculate grid position (centered)
 		int gridWidth = RECIPES_PER_ROW * (SLOT_SIZE + SLOT_SPACING);
 		int gridHeight = ROWS_PER_PAGE * (SLOT_SIZE + SLOT_SPACING);
 		int gridX = (this.width - gridWidth) / 2;
 		int gridY = 50;
 
-		// Search field
 		searchField = new EditBox(
 			this.font,
 			gridX,
@@ -134,7 +125,6 @@ public class SmartRecipeBookScreen extends Screen {
 		searchField.setResponder(this::onSearchChanged);
 		this.addRenderableWidget(searchField);
 
-		// Page navigation
 		int navY = gridY + gridHeight + 10;
 
 		prevPageButton = Button.builder(
@@ -164,7 +154,6 @@ public class SmartRecipeBookScreen extends Screen {
 		// Ensure recipes are loaded (will load from integrated server in singleplayer)
 		RecipeCache.ensureLoaded();
 
-		// Get recipes based on mode
 		switch (recipeMode) {
 			case FURNACE:
 				allRecipes = RecipeCache.getFurnaceRecipes();
@@ -227,7 +216,6 @@ public class SmartRecipeBookScreen extends Screen {
 				continue;
 			}
 
-			// Get result item for filtering
 			List<ItemStack> results = entry.resultItems(contextParams);
 			if (results.isEmpty() || results.get(0).isEmpty()) continue;
 
@@ -249,7 +237,6 @@ public class SmartRecipeBookScreen extends Screen {
 			displayedRecipes.add(entry);
 		}
 
-		// Sort by craft statistics (most crafted first)
 		final ContextMap sortContext = contextParams;
 		displayedRecipes.sort((a, b) -> {
 			Item itemA = a.resultItems(sortContext).get(0).getItem();
@@ -259,7 +246,6 @@ public class SmartRecipeBookScreen extends Screen {
 			return Integer.compare(countB, countA); // Descending order
 		});
 
-		// Update page navigation
 		updatePageButtons();
 	}
 
@@ -290,7 +276,6 @@ public class SmartRecipeBookScreen extends Screen {
 	 * Uses caching to avoid recalculating expensive checks.
 	 */
 	private boolean canCraftRecipeRecursive(RecipeDisplayEntry entry, ContextMap contextParams) {
-		// Check cache first
 		Boolean cached = craftabilityCache.get(entry.id());
 		if (cached != null) {
 			return cached;
@@ -324,11 +309,9 @@ public class SmartRecipeBookScreen extends Screen {
 			return false;
 		}
 
-		// Get the ingredient slot
 		List<ItemStack> possibleIngredients = furnaceDisplay.ingredient().resolveForStacks(contextParams);
 		if (possibleIngredients.isEmpty()) return false;
 
-		// Check if we have any of the possible ingredients
 		for (ItemStack stack : possibleIngredients) {
 			if (stack.isEmpty()) continue;
 			int have = playerInventory.getOrDefault(stack.getItem(), 0);
@@ -365,7 +348,6 @@ public class SmartRecipeBookScreen extends Screen {
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
-		// Draw dark background
 		context.fill(0, 0, this.width, this.height, 0xC0101010);
 
 		super.extractRenderState(context, mouseX, mouseY, delta);
@@ -374,12 +356,10 @@ public class SmartRecipeBookScreen extends Screen {
 
 		ContextMap contextParams = SlotDisplayContext.fromLevel(minecraft.level);
 
-		// Calculate grid position
 		int gridWidth = RECIPES_PER_ROW * (SLOT_SIZE + SLOT_SPACING);
 		int gridX = (this.width - gridWidth) / 2;
 		int gridY = 50;
 
-		// Draw title
 		String modeLabel;
 		if (recipeMode.isFurnaceType()) {
 			modeLabel = recipeMode.getDisplayName();
@@ -394,7 +374,6 @@ public class SmartRecipeBookScreen extends Screen {
 			0xFFFFFF
 		);
 
-		// Draw page info
 		int totalPages = Math.max(1, (displayedRecipes.size() + RECIPES_PER_PAGE - 1) / RECIPES_PER_PAGE);
 		context.centeredText(
 			this.font,
@@ -404,10 +383,8 @@ public class SmartRecipeBookScreen extends Screen {
 			0xAAAAAA
 		);
 
-		// Reset hover state
 		hoveredRecipe = null;
 
-		// Draw recipe grid
 		int startIndex = currentPage * RECIPES_PER_PAGE;
 		for (int i = 0; i < RECIPES_PER_PAGE && startIndex + i < displayedRecipes.size(); i++) {
 			int row = i / RECIPES_PER_ROW;
@@ -422,7 +399,6 @@ public class SmartRecipeBookScreen extends Screen {
 
 			ItemStack resultStack = results.get(0);
 
-			// Check if mouse is hovering
 			boolean hovered = mouseX >= slotX && mouseX < slotX + SLOT_SIZE &&
 							  mouseY >= slotY && mouseY < slotY + SLOT_SIZE;
 
@@ -436,18 +412,15 @@ public class SmartRecipeBookScreen extends Screen {
 
 			context.fill(slotX, slotY, slotX + SLOT_SIZE, slotY + SLOT_SIZE, bgColor);
 
-			// Draw border
 			context.fill(slotX, slotY, slotX + SLOT_SIZE, slotY + 1, borderColor); // top
 			context.fill(slotX, slotY + SLOT_SIZE - 1, slotX + SLOT_SIZE, slotY + SLOT_SIZE, borderColor); // bottom
 			context.fill(slotX, slotY, slotX + 1, slotY + SLOT_SIZE, borderColor); // left
 			context.fill(slotX + SLOT_SIZE - 1, slotY, slotX + SLOT_SIZE, slotY + SLOT_SIZE, borderColor); // right
 
-			// Draw item
 			int itemX = slotX + (SLOT_SIZE - 16) / 2;
 			int itemY = slotY + (SLOT_SIZE - 16) / 2;
 			context.item(resultStack, itemX, itemY);
 
-			// Draw count if > 1
 			if (resultStack.getCount() > 1) {
 				context.itemDecorations(this.font, resultStack, itemX, itemY);
 			}
@@ -457,7 +430,6 @@ public class SmartRecipeBookScreen extends Screen {
 		if (hoveredRecipe != null) {
 			List<ItemStack> results = hoveredRecipe.resultItems(contextParams);
 			if (!results.isEmpty()) {
-				// Build custom tooltip with craftability info
 				List<Component> tooltip = new ArrayList<>();
 				tooltip.add(results.get(0).getHoverName());
 
@@ -499,7 +471,6 @@ public class SmartRecipeBookScreen extends Screen {
 			return true;
 		}
 
-		// Check if clicking on a recipe slot
 		if (click.button() == 0 && hoveredRecipe != null) {
 			openRecipePreview(hoveredRecipe);
 			return true;
@@ -510,18 +481,16 @@ public class SmartRecipeBookScreen extends Screen {
 
 	private void openRecipePreview(RecipeDisplayEntry entry) {
 		if (minecraft == null) return;
-		minecraft.setScreen(new RecipePreviewScreen(this, entry, craftingGridSize));
+		minecraft.gui.setScreen(new RecipePreviewScreen(this, entry, craftingGridSize));
 	}
 
 	@Override
 	public boolean keyPressed(net.minecraft.client.input.KeyEvent keyInput) {
-		// Close on escape
 		if (keyInput.key() == 256) { // ESC
 			onClose();
 			return true;
 		}
 
-		// Let search field handle input
 		if (searchField.isFocused()) {
 			return searchField.keyPressed(keyInput);
 		}
@@ -531,7 +500,7 @@ public class SmartRecipeBookScreen extends Screen {
 
 	@Override
 	public void onClose() {
-		this.minecraft.setScreen(parent);
+		this.minecraft.gui.setScreen(parent);
 	}
 
 	@Override

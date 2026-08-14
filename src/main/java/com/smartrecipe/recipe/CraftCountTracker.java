@@ -6,7 +6,7 @@ import net.minecraft.world.item.Item;
 
 /**
  * Tracks how many times each item has been crafted this session for sorting purposes.
- * Runs on the client thread only — not thread-safe.
+ * Runs on the client thread only; not thread-safe.
  */
 public class CraftCountTracker {
 

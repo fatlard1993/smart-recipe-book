@@ -56,24 +56,18 @@ public class ClientPlayNetworkHandlerMixin {
 		at = @At("TAIL")
 	)
 	private void onRecipeBookAdd(ClientboundRecipeBookAddPacket packet, CallbackInfo ci) {
-		// If replace is true, clear our cache first
 		if (packet.replace()) {
 			RecipeCache.clear();
 		}
 
-		// Extract all recipe display entries from the packet
 		List<RecipeDisplayEntry> entries = new ArrayList<>();
 		for (ClientboundRecipeBookAddPacket.Entry entry : packet.entries()) {
 			entries.add(entry.contents());
 		}
 
-		// Add to our cache
 		RecipeCache.addRecipes(entries);
 	}
 
-	/**
-	 * Handle recipe removal
-	 */
 	@Inject(
 		method = "handleRecipeBookRemove",
 		at = @At("TAIL")

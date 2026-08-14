@@ -17,7 +17,6 @@ public class RecipeToastMixin {
 
 	@Inject(method = "addOrUpdate", at = @At("HEAD"), cancellable = true)
 	private static void cancelRecipeToast(ToastManager toastManager, RecipeDisplay display, CallbackInfo ci) {
-		// Cancel the toast notification entirely
 		ci.cancel();
 	}
 }

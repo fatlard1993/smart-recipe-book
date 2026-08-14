@@ -32,7 +32,7 @@ public class RecipeResultCollectionMixin {
 	@Unique
 	private static long lastCacheClear = 0;
 
-	// 2-second TTL — responsive to inventory changes without per-frame recalc
+	// 2-second TTL: responsive to inventory changes without per-frame recalc
 	@Unique
 	private static final long CACHE_TTL_MS = 2000;
 
@@ -46,7 +46,6 @@ public class RecipeResultCollectionMixin {
 			return;
 		}
 
-		// Expire cache periodically
 		long now = System.currentTimeMillis();
 		if (now - lastCacheClear > CACHE_TTL_MS) {
 			craftabilityCache.clear();

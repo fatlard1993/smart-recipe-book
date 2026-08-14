@@ -40,7 +40,7 @@ public class AutoCraftExecutor {
 	// allowing the next step to fire immediately on the next tick.
 	private static boolean inventoryUpdated = false;
 
-	// Track the syncId we started with — if it changes, the screen changed
+	// Track the syncId we started with; if it changes, the screen changed
 	private static int initialSyncId = -1;
 
 	// Track the pending step whose result has not yet been confirmed
@@ -109,7 +109,7 @@ public class AutoCraftExecutor {
 		CraftPacketSender.sendCraftRequest(step.getRecipeId(), false);
 		clickCraftingResult();
 
-		// Track this step as pending — count will be incremented on confirmation
+		// Track this step as pending; the count is credited on confirmation
 		pendingStep = step;
 
 		currentStepIndex++;
@@ -118,7 +118,7 @@ public class AutoCraftExecutor {
 		if (currentStepIndex < steps.size()) {
 			ticksUntilNextStep = TICK_TIMEOUT;
 		} else {
-			// Last step — wait for final confirmation then complete
+			// Last step: wait for final confirmation then complete
 			ticksUntilNextStep = TICK_TIMEOUT;
 		}
 	}
@@ -139,7 +139,7 @@ public class AutoCraftExecutor {
 
 	/**
 	 * Shift-click the crafting result slot to move items to inventory.
-	 * Sent immediately after the craft request — the server queues it
+	 * Sent immediately after the craft request; the server queues it
 	 * and processes it after filling the grid.
 	 */
 	private static void clickCraftingResult() {
@@ -183,7 +183,7 @@ public class AutoCraftExecutor {
 			ticksUntilNextStep--;
 			if (ticksUntilNextStep == 0) {
 				if (currentStepIndex >= steps.size()) {
-					// Final step timed out — complete anyway
+					// Final step timed out: complete anyway
 					confirmPendingStep();
 					SmartRecipeBookMod.LOGGER.debug("Crafting plan complete");
 					reset();

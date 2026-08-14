@@ -41,7 +41,6 @@ public class RecipePreviewScreen extends Screen {
 	private int craftQuantity = 1;
 	private int maxCraftable = 1;
 
-	// Crafting confirmation state
 	private boolean showingConfirmation = false;
 	private int confirmationTicks = 0;
 	private static final int CONFIRMATION_DURATION = 15; // ~0.75 seconds
@@ -51,13 +50,11 @@ public class RecipePreviewScreen extends Screen {
 	private Button plusButton;
 	private Button minusButton;
 
-	// Layout constants
 	private static final int SLOT_SIZE = 18;
 	private static final int GRID_SLOT_SIZE = 20;
 	private static final int PANEL_WIDTH = 220;
 	private static final int PANEL_HEIGHT = 200;
 
-	// Slot tracking for tooltips and clicks
 	private static class SlotInfo {
 		int x, y;
 		ItemStack stack;
@@ -107,17 +104,13 @@ public class RecipePreviewScreen extends Screen {
 	protected void init() {
 		super.init();
 
-		// Calculate craftability
 		calculateCraftability();
 
-		// Calculate max craftable
 		calculateMaxCraftable();
 
-		// Calculate panel position (centered)
 		int panelX = (this.width - PANEL_WIDTH) / 2;
 		int panelY = (this.height - PANEL_HEIGHT) / 2;
 
-		// Quantity controls (only for crafting recipes)
 		int quantityY = panelY + PANEL_HEIGHT - 60;
 
 		if (!isFurnaceRecipe) {
@@ -134,7 +127,6 @@ public class RecipePreviewScreen extends Screen {
 			this.addRenderableWidget(plusButton);
 		}
 
-		// Craft/Close button
 		if (isFurnaceRecipe) {
 			// For furnace recipes, just show a close button (can't auto-smelt)
 			craftButton = Button.builder(
@@ -150,7 +142,6 @@ public class RecipePreviewScreen extends Screen {
 		}
 		this.addRenderableWidget(craftButton);
 
-		// Cancel button
 		cancelButton = Button.builder(
 			Component.literal("Cancel"),
 			button -> onClose()
@@ -194,7 +185,6 @@ public class RecipePreviewScreen extends Screen {
 			return false;
 		}
 
-		// Check if we have ANY of the possible ingredients
 		List<ItemStack> possibleIngredients = furnaceDisplay.ingredient().resolveForStacks(contextParams);
 		for (ItemStack stack : possibleIngredients) {
 			if (!stack.isEmpty() && playerInventory.getOrDefault(stack.getItem(), 0) > 0) {
@@ -217,24 +207,19 @@ public class RecipePreviewScreen extends Screen {
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
-		// Draw dark overlay
 		context.fill(0, 0, this.width, this.height, 0xC0101010);
 
-		// Calculate panel position
 		int panelX = (this.width - PANEL_WIDTH) / 2;
 		int panelY = (this.height - PANEL_HEIGHT) / 2;
 
-		// Draw panel background
 		context.fill(panelX, panelY, panelX + PANEL_WIDTH, panelY + PANEL_HEIGHT, 0xFF2A2A2A);
 
-		// Draw border
 		int borderColor = canCraft ? 0xFF44AA44 : 0xFF666666;
 		context.fill(panelX, panelY, panelX + PANEL_WIDTH, panelY + 2, borderColor);
 		context.fill(panelX, panelY + PANEL_HEIGHT - 2, panelX + PANEL_WIDTH, panelY + PANEL_HEIGHT, borderColor);
 		context.fill(panelX, panelY, panelX + 2, panelY + PANEL_HEIGHT, borderColor);
 		context.fill(panelX + PANEL_WIDTH - 2, panelY, panelX + PANEL_WIDTH, panelY + PANEL_HEIGHT, borderColor);
 
-		// Draw result name at top
 		context.centeredText(
 			this.font,
 			resultStack.getHoverName(),
@@ -243,10 +228,8 @@ public class RecipePreviewScreen extends Screen {
 			0xFFFFFF
 		);
 
-		// Draw crafting grid preview (pass mouse coords for hover detection)
 		drawCraftingGrid(context, panelX, panelY + 25, mouseX, mouseY);
 
-		// Draw quantity display (only for crafting recipes)
 		if (!isFurnaceRecipe) {
 			String quantityText = "Quantity: " + craftQuantity;
 			if (maxCraftable > 1) {
@@ -263,10 +246,8 @@ public class RecipePreviewScreen extends Screen {
 			);
 		}
 
-		// Draw buttons
 		super.extractRenderState(context, mouseX, mouseY, delta);
 
-		// Draw crafting confirmation overlay
 		if (showingConfirmation) {
 			drawConfirmation(context);
 		}
@@ -299,7 +280,6 @@ public class RecipePreviewScreen extends Screen {
 	private void drawCraftingGrid(GuiGraphicsExtractor context, int panelX, int startY, int mouseX, int mouseY) {
 		if (minecraft == null || minecraft.level == null) return;
 
-		// Clear slot tracking
 		ingredientSlots.clear();
 		resultSlot = null;
 		hoveredSlot = null;
@@ -330,13 +310,11 @@ public class RecipePreviewScreen extends Screen {
 			return;
 		}
 
-		// Calculate grid position (centered in panel)
 		int gridPixelWidth = gridWidth * GRID_SLOT_SIZE;
 		int totalWidth = gridPixelWidth + 30 + GRID_SLOT_SIZE; // grid + arrow + result
 		int gridX = panelX + (PANEL_WIDTH - totalWidth) / 2;
 		int gridY = startY;
 
-		// Draw ingredient grid
 		for (int i = 0; i < displaySlots.size(); i++) {
 			int col, row;
 			if (display instanceof ShapedCraftingRecipeDisplay) {
@@ -350,7 +328,6 @@ public class RecipePreviewScreen extends Screen {
 			int slotX = gridX + col * GRID_SLOT_SIZE;
 			int slotY = gridY + row * GRID_SLOT_SIZE;
 
-			// Draw slot background
 			context.fill(slotX, slotY, slotX + SLOT_SIZE, slotY + SLOT_SIZE, 0xFF3A3A3A);
 
 			// Draw ingredient
@@ -376,7 +353,6 @@ public class RecipePreviewScreen extends Screen {
 					}
 					ingredientSlots.add(slotInfo);
 
-					// Check if mouse is hovering
 					boolean hovered = mouseX >= slotX && mouseX < slotX + SLOT_SIZE &&
 									  mouseY >= slotY && mouseY < slotY + SLOT_SIZE;
 					if (hovered) {
@@ -387,7 +363,6 @@ public class RecipePreviewScreen extends Screen {
 					int have = playerInventory.getOrDefault(ingredientStack.getItem(), 0);
 					boolean hasIngredient = have > 0;
 
-					// Draw item
 					context.item(ingredientStack, slotX + 1, slotY + 1);
 
 					// Draw overlay based on status
@@ -404,30 +379,24 @@ public class RecipePreviewScreen extends Screen {
 			}
 		}
 
-		// Draw arrow
 		int arrowX = gridX + gridPixelWidth + 5;
 		int arrowY = gridY + (gridHeight * GRID_SLOT_SIZE) / 2 - 4;
 		context.text(this.font, Component.literal("→"), arrowX, arrowY, 0xFFFFFF);
 
-		// Draw result slot
 		int resultX = arrowX + 20;
 		int resultY = gridY + (gridHeight * GRID_SLOT_SIZE) / 2 - SLOT_SIZE / 2;
 
-		// Track result slot
 		resultSlot = new SlotInfo(resultX, resultY, resultStack);
 
-		// Check if hovering result
 		boolean resultHovered = mouseX >= resultX && mouseX < resultX + SLOT_SIZE &&
 								mouseY >= resultY && mouseY < resultY + SLOT_SIZE;
 		if (resultHovered) {
 			hoveredSlot = resultSlot;
 		}
 
-		// Result background (highlighted)
 		context.fill(resultX - 2, resultY - 2, resultX + SLOT_SIZE + 2, resultY + SLOT_SIZE + 2, 0xFF4A4A4A);
 		context.fill(resultX, resultY, resultX + SLOT_SIZE, resultY + SLOT_SIZE, 0xFF3A3A3A);
 
-		// Draw result item
 		context.item(resultStack, resultX + 1, resultY + 1);
 		if (resultStack.getCount() > 1) {
 			context.itemDecorations(this.font, resultStack, resultX + 1, resultY + 1);
@@ -444,11 +413,9 @@ public class RecipePreviewScreen extends Screen {
 		List<ItemStack> allIngredients = new ArrayList<>();
 		Set<Item> seenItems = new HashSet<>();
 
-		// Get all furnace recipes that produce the same result
 		List<RecipeDisplayEntry> allFurnaceRecipes = RecipeCache.findAllFurnaceRecipesForItem(
 			resultStack.getItem(), minecraft.level);
 
-		// Collect all unique ingredients from all matching recipes
 		for (RecipeDisplayEntry entry : allFurnaceRecipes) {
 			if (entry.display() instanceof FurnaceRecipeDisplay fd) {
 				for (ItemStack stack : fd.ingredient().resolveForStacks(contextParams)) {
@@ -472,12 +439,10 @@ public class RecipePreviewScreen extends Screen {
 
 		if (allIngredients.isEmpty()) return;
 
-		// Calculate layout based on number of ingredients
 		int ingredientCount = allIngredients.size();
 		int ingredientsPerRow = 4; // Always 4 per row for consistency
 		totalIngredientRows = (ingredientCount + ingredientsPerRow - 1) / ingredientsPerRow;
 
-		// Clamp scroll offset
 		int maxScrollOffset = Math.max(0, totalIngredientRows - maxVisibleIngredientRows);
 		ingredientScrollOffset = Math.max(0, Math.min(ingredientScrollOffset, maxScrollOffset));
 
@@ -486,7 +451,6 @@ public class RecipePreviewScreen extends Screen {
 		int ingredientGridWidth = ingredientsPerRow * (SLOT_SIZE + 2);
 		int ingredientGridHeight = visibleRows * (SLOT_SIZE + 2);
 
-		// Center the layout
 		int totalWidth = ingredientGridWidth + 25 + 20 + 25 + SLOT_SIZE; // ingredients + arrow + fire + arrow + result
 		int startX = panelX + (PANEL_WIDTH - totalWidth) / 2;
 		int baseY = startY + 10;
@@ -504,7 +468,6 @@ public class RecipePreviewScreen extends Screen {
 				startX + ingredientGridWidth / 2, baseY + ingredientGridHeight + 2, 0xFFAAAA00);
 		}
 
-		// Draw visible ingredient slots
 		boolean hasAnyIngredient = false;
 		int startIndex = ingredientScrollOffset * ingredientsPerRow;
 		int endIndex = Math.min(allIngredients.size(), startIndex + (maxVisibleIngredientRows * ingredientsPerRow));
@@ -519,7 +482,6 @@ public class RecipePreviewScreen extends Screen {
 
 			ItemStack ingredientStack = allIngredients.get(i);
 
-			// Draw slot background
 			context.fill(slotX, slotY, slotX + SLOT_SIZE, slotY + SLOT_SIZE, 0xFF3A3A3A);
 
 			// Track this slot
@@ -544,7 +506,6 @@ public class RecipePreviewScreen extends Screen {
 			boolean hasIngredient = have > 0;
 			if (hasIngredient) hasAnyIngredient = true;
 
-			// Draw item
 			context.item(ingredientStack, slotX + 1, slotY + 1);
 
 			// Draw overlay based on status
@@ -567,46 +528,36 @@ public class RecipePreviewScreen extends Screen {
 			}
 		}
 
-		// Calculate vertical center of ingredient grid
 		int ingredientCenterY = baseY + ingredientGridHeight / 2;
 
-		// Draw first arrow
 		int arrow1X = startX + ingredientGridWidth + 5;
 		context.text(this.font, Component.literal("→"), arrow1X, ingredientCenterY - 4, 0xFFFFFF);
 
-		// Draw fire icon (represents smelting)
 		int fireX = arrow1X + 18;
 		context.text(this.font, Component.literal("*"), fireX, ingredientCenterY - 4, 0xFFAA00);
 
-		// Draw second arrow
 		int arrow2X = fireX + 18;
 		context.text(this.font, Component.literal("→"), arrow2X, ingredientCenterY - 4, 0xFFFFFF);
 
-		// Draw result slot (vertically centered with ingredients)
 		int resultX = arrow2X + 18;
 		int resultY = ingredientCenterY - SLOT_SIZE / 2;
 
-		// Track result slot
 		resultSlot = new SlotInfo(resultX, resultY, resultStack);
 
-		// Check if hovering result
 		boolean resultHovered = mouseX >= resultX && mouseX < resultX + SLOT_SIZE &&
 								mouseY >= resultY && mouseY < resultY + SLOT_SIZE;
 		if (resultHovered) {
 			hoveredSlot = resultSlot;
 		}
 
-		// Result background (highlighted)
 		context.fill(resultX - 2, resultY - 2, resultX + SLOT_SIZE + 2, resultY + SLOT_SIZE + 2, 0xFF4A4A4A);
 		context.fill(resultX, resultY, resultX + SLOT_SIZE, resultY + SLOT_SIZE, 0xFF3A3A3A);
 
-		// Draw result item
 		context.item(resultStack, resultX + 1, resultY + 1);
 		if (resultStack.getCount() > 1) {
 			context.itemDecorations(this.font, resultStack, resultX + 1, resultY + 1);
 		}
 
-		// Draw status text and ingredient count
 		int statusY = baseY + ingredientGridHeight + (canScrollDown ? 14 : 2);
 		String countText = "(" + allIngredients.size() + " sources)";
 		context.centeredText(this.font, Component.literal(countText),
@@ -658,7 +609,6 @@ public class RecipePreviewScreen extends Screen {
 	}
 
 	private void drawConfirmation(GuiGraphicsExtractor context) {
-		// Calculate fade based on ticks
 		float alpha = Math.min(1.0f, confirmationTicks / 10.0f);
 		if (confirmationTicks > CONFIRMATION_DURATION - 10) {
 			alpha = (CONFIRMATION_DURATION - confirmationTicks) / 10.0f;
@@ -666,11 +616,9 @@ public class RecipePreviewScreen extends Screen {
 
 		int alphaInt = (int)(alpha * 200);
 
-		// Draw green overlay
 		int color = (alphaInt << 24) | 0x44AA44;
 		context.fill(0, 0, this.width, this.height, color);
 
-		// Draw confirmation text
 		if (alpha > 0.3f) {
 			int textAlpha = (int)(alpha * 255);
 			context.centeredText(
@@ -718,14 +666,11 @@ public class RecipePreviewScreen extends Screen {
 
 		SmartRecipeBookMod.LOGGER.debug("Crafting {}x {} from preview", craftQuantity, resultStack.getHoverName().getString());
 
-		// Execute the plan
 		AutoCraftExecutor.execute(minecraft, craftingPlan, craftQuantity);
 
-		// Show confirmation
 		showingConfirmation = true;
 		confirmationTicks = 0;
 
-		// Disable buttons during confirmation
 		craftButton.active = false;
 		cancelButton.active = false;
 		if (plusButton != null) plusButton.active = false;
@@ -736,7 +681,6 @@ public class RecipePreviewScreen extends Screen {
 	public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent click, boolean consumed) {
 		if (showingConfirmation) return true; // Block input during confirmation
 
-		// Let parent handle widget clicks first
 		if (super.mouseClicked(click, consumed)) {
 			return true;
 		}
@@ -760,7 +704,7 @@ public class RecipePreviewScreen extends Screen {
 				// Navigate to the recipe for this ingredient
 				SmartRecipeBookMod.LOGGER.debug("Navigating to recipe for: {}",
 					hoveredSlot.stack.getHoverName().getString());
-				minecraft.setScreen(new RecipePreviewScreen(this, hoveredSlot.recipe, craftingGridSize));
+				minecraft.gui.setScreen(new RecipePreviewScreen(this, hoveredSlot.recipe, craftingGridSize));
 				return true;
 			}
 		}
@@ -790,7 +734,7 @@ public class RecipePreviewScreen extends Screen {
 		if (parent instanceof SmartRecipeBookScreen recipeBook) {
 			recipeBook.refresh();
 		}
-		this.minecraft.setScreen(parent);
+		this.minecraft.gui.setScreen(parent);
 	}
 
 	@Override
