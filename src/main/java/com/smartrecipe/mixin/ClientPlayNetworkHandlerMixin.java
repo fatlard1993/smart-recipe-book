@@ -1,5 +1,6 @@
 package com.smartrecipe.mixin;
 
+import com.smartrecipe.SmartRecipeBookMod;
 import com.smartrecipe.crafting.AutoCraftExecutor;
 import com.smartrecipe.recipe.RecipeCache;
 import org.spongepowered.asm.mixin.Mixin;
@@ -66,6 +67,12 @@ public class ClientPlayNetworkHandlerMixin {
 		}
 
 		RecipeCache.addRecipes(entries);
+
+		// Info-level on the initial full sync only: lets a player confirm from the
+		// log that the mod is installed and capturing recipes on this connection
+		if (packet.replace()) {
+			SmartRecipeBookMod.LOGGER.info("Recipe cache primed with {} recipes from server", RecipeCache.getRecipeCount());
+		}
 	}
 
 	@Inject(

@@ -6,6 +6,21 @@ plugins {
 version = project.mod_version
 group = project.maven_group
 
+// e.g. ./gradlew runClient -PquickJoin=localhost:25565
+// Appended in doFirst: loom composes its own game args during configuration,
+// and this must land after them, right before exec
+if (project.hasProperty('quickJoin')) {
+	tasks.named('runClient') {
+		doFirst {
+			args('--quickPlayMultiplayer', project.property('quickJoin').toString())
+			logger.lifecycle("runClient game args: {}", args)
+			if (project.hasProperty('quickJoinMaxHeap')) {
+				jvmArgs("-Xmx${project.property('quickJoinMaxHeap')}")
+			}
+		}
+	}
+}
+
 base {
 	archivesName = project.archives_base_name
 }
