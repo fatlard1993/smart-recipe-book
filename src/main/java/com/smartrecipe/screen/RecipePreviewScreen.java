@@ -5,6 +5,7 @@ import com.smartrecipe.crafting.AutoCraftExecutor;
 import com.smartrecipe.recipe.CraftingPlan;
 import com.smartrecipe.recipe.RecipeCache;
 import com.smartrecipe.recipe.RecipeTreeCalculator;
+import com.mojang.blaze3d.platform.InputConstants;
 import java.util.*;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -225,7 +226,7 @@ public class RecipePreviewScreen extends Screen {
 			resultStack.getHoverName(),
 			panelX + PANEL_WIDTH / 2,
 			panelY + 8,
-			0xFFFFFF
+			0xFFFFFFFF
 		);
 
 		drawCraftingGrid(context, panelX, panelY + 25, mouseX, mouseY);
@@ -381,7 +382,7 @@ public class RecipePreviewScreen extends Screen {
 
 		int arrowX = gridX + gridPixelWidth + 5;
 		int arrowY = gridY + (gridHeight * GRID_SLOT_SIZE) / 2 - 4;
-		context.text(this.font, Component.literal("→"), arrowX, arrowY, 0xFFFFFF);
+		context.text(this.font, Component.literal("→"), arrowX, arrowY, 0xFFFFFFFF);
 
 		int resultX = arrowX + 20;
 		int resultY = gridY + (gridHeight * GRID_SLOT_SIZE) / 2 - SLOT_SIZE / 2;
@@ -531,13 +532,13 @@ public class RecipePreviewScreen extends Screen {
 		int ingredientCenterY = baseY + ingredientGridHeight / 2;
 
 		int arrow1X = startX + ingredientGridWidth + 5;
-		context.text(this.font, Component.literal("→"), arrow1X, ingredientCenterY - 4, 0xFFFFFF);
+		context.text(this.font, Component.literal("→"), arrow1X, ingredientCenterY - 4, 0xFFFFFFFF);
 
 		int fireX = arrow1X + 18;
-		context.text(this.font, Component.literal("*"), fireX, ingredientCenterY - 4, 0xFFAA00);
+		context.text(this.font, Component.literal("*"), fireX, ingredientCenterY - 4, 0xFFFFAA00);
 
 		int arrow2X = fireX + 18;
-		context.text(this.font, Component.literal("→"), arrow2X, ingredientCenterY - 4, 0xFFFFFF);
+		context.text(this.font, Component.literal("→"), arrow2X, ingredientCenterY - 4, 0xFFFFFFFF);
 
 		int resultX = arrow2X + 18;
 		int resultY = ingredientCenterY - SLOT_SIZE / 2;
@@ -685,11 +686,11 @@ public class RecipePreviewScreen extends Screen {
 			return true;
 		}
 
-		// Get mouse position from client (fallback if super didn't handle)
-		double mouseX = minecraft.mouseHandler.xpos() * width / minecraft.getWindow().getScreenWidth();
-		double mouseY = minecraft.mouseHandler.ypos() * height / minecraft.getWindow().getScreenHeight();
+		// MouseButtonEvent carries GUI-space coordinates already
+		double mouseX = click.x();
+		double mouseY = click.y();
 
-		if (click.button() == 0) {
+		if (click.button() == InputConstants.MOUSE_BUTTON_LEFT) {
 			if (minusButton != null && isMouseOverButton(minusButton, mouseX, mouseY) && minusButton.active) {
 				adjustQuantity(-1);
 				return true;
@@ -721,7 +722,7 @@ public class RecipePreviewScreen extends Screen {
 	public boolean keyPressed(net.minecraft.client.input.KeyEvent keyInput) {
 		if (showingConfirmation) return true; // Block input during confirmation
 
-		if (keyInput.key() == 256) { // ESC
+		if (keyInput.isEscape()) {
 			onClose();
 			return true;
 		}

@@ -6,6 +6,7 @@ import com.smartrecipe.recipe.CraftingPlan;
 import com.smartrecipe.recipe.RecipeCache;
 import com.smartrecipe.recipe.RecipeTreeCalculator;
 import com.smartrecipe.recipe.CraftCountTracker;
+import com.mojang.blaze3d.platform.InputConstants;
 import java.util.*;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -371,7 +372,7 @@ public class SmartRecipeBookScreen extends Screen {
 			Component.literal("Recipes - " + modeLabel + " (" + displayedRecipes.size() + ")"),
 			this.width / 2,
 			8,
-			0xFFFFFF
+			0xFFFFFFFF
 		);
 
 		int totalPages = Math.max(1, (displayedRecipes.size() + RECIPES_PER_PAGE - 1) / RECIPES_PER_PAGE);
@@ -380,7 +381,7 @@ public class SmartRecipeBookScreen extends Screen {
 			Component.literal("Page " + (currentPage + 1) + " / " + totalPages),
 			this.width / 2,
 			gridY + ROWS_PER_PAGE * (SLOT_SIZE + SLOT_SPACING) + 15,
-			0xAAAAAA
+			0xFFAAAAAA
 		);
 
 		hoveredRecipe = null;
@@ -471,7 +472,7 @@ public class SmartRecipeBookScreen extends Screen {
 			return true;
 		}
 
-		if (click.button() == 0 && hoveredRecipe != null) {
+		if (click.button() == InputConstants.MOUSE_BUTTON_LEFT && hoveredRecipe != null) {
 			openRecipePreview(hoveredRecipe);
 			return true;
 		}
@@ -486,7 +487,7 @@ public class SmartRecipeBookScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(net.minecraft.client.input.KeyEvent keyInput) {
-		if (keyInput.key() == 256) { // ESC
+		if (keyInput.isEscape()) {
 			onClose();
 			return true;
 		}
