@@ -16,6 +16,7 @@ This is a **client-side only** mod: install it on your client, no server install
 
 - **Grid-aware filtering** - In your inventory (2x2 grid), you only see recipes you can actually craft there. At a crafting table (3x3), you see everything.
 - **Real craftability** - Recipes show as craftable when you have the materials, even if you need to craft intermediate items first.
+- **Craftable-only toggle** - Button under the grid switches between every recipe and only the ones you can actually make right now, sub-crafting included. The choice sticks until you change it.
 - **Usage tracking** - Recipes you craft frequently appear first (resets each session).
 - **Search** - Type to filter recipes by name in real time.
 - **Deduplication** - One recipe per result item, keeping the list clean.

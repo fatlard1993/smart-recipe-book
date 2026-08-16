@@ -52,9 +52,16 @@ public class SmartRecipeBookScreen extends Screen {
 	// Cache for recursive craftability checks (expensive to compute)
 	private Map<RecipeDisplayId, Boolean> craftabilityCache = new HashMap<>();
 
+	/**
+	 * Static so the choice survives closing the screen. A filter you have to
+	 * re-enable every time you open a chest is a filter nobody uses.
+	 */
+	private static boolean craftableOnly = false;
+
 	private EditBox searchField;
 	private Button prevPageButton;
 	private Button nextPageButton;
+	private Button craftableToggle;
 
 	private RecipeDisplayEntry hoveredRecipe = null;
 
@@ -140,6 +147,14 @@ public class SmartRecipeBookScreen extends Screen {
 		).bounds(gridX + gridWidth - 30, navY, 30, 20).build();
 		this.addRenderableWidget(nextPageButton);
 
+		// Between the page arrows, where there is already dead space.
+		int toggleWidth = 120;
+		craftableToggle = Button.builder(
+			craftableToggleLabel(),
+			button -> toggleCraftableOnly()
+		).bounds(gridX + (gridWidth - toggleWidth) / 2, navY, toggleWidth, 20).build();
+		this.addRenderableWidget(craftableToggle);
+
 		// Close button (X) in top-right corner
 		Button closeButton = Button.builder(
 			Component.literal("X"),
@@ -200,6 +215,19 @@ public class SmartRecipeBookScreen extends Screen {
 		applyFilters();
 	}
 
+	private Component craftableToggleLabel() {
+		return Component.literal(craftableOnly ? "Craftable only" : "All recipes");
+	}
+
+	private void toggleCraftableOnly() {
+		craftableOnly = !craftableOnly;
+		craftableToggle.setMessage(craftableToggleLabel());
+		// Back to page one: the page you were on probably does not exist in the
+		// filtered list, and landing on an empty page reads as a broken filter.
+		currentPage = 0;
+		applyFilters();
+	}
+
 	private void applyFilters() {
 		displayedRecipes = new ArrayList<>();
 
@@ -224,8 +252,16 @@ public class SmartRecipeBookScreen extends Screen {
 			Item resultItem = resultStack.getItem();
 			String itemName = resultStack.getHoverName().getString().toLowerCase();
 
-			// Apply search filter only - craftability is checked on hover
 			if (!searchQuery.isEmpty() && !itemName.contains(searchQuery)) {
+				continue;
+			}
+
+			// Craftability is otherwise only resolved on hover, because a full
+			// recursive plan per recipe is expensive. Running it across the whole
+			// list is the price of the filter, and it is paid once per recipe:
+			// the results land in craftabilityCache, which the hover path and the
+			// next filter pass both read.
+			if (craftableOnly && !canCraftRecipeRecursive(entry, contextParams)) {
 				continue;
 			}
 
