@@ -53,10 +53,13 @@ public class SmartRecipeBookScreen extends Screen {
 	private Map<RecipeDisplayId, Boolean> craftabilityCache = new HashMap<>();
 
 	/**
-	 * Static so the choice survives closing the screen. A filter you have to
-	 * re-enable every time you open a chest is a filter nobody uses.
+	 * Craftable-only by default: the point of this book is showing what you can
+	 * actually make, and the full list is the exception you opt into.
+	 *
+	 * <p>Static so the choice survives closing the screen. A filter you have to
+	 * re-set every time you open a chest is a filter nobody uses.
 	 */
-	private static boolean craftableOnly = false;
+	private static boolean craftableOnly = true;
 
 	private EditBox searchField;
 	private Button prevPageButton;
@@ -147,12 +150,14 @@ public class SmartRecipeBookScreen extends Screen {
 		).bounds(gridX + gridWidth - 30, navY, 30, 20).build();
 		this.addRenderableWidget(nextPageButton);
 
-		// Between the page arrows, where there is already dead space.
+		// Its own row under the arrows. The space between them only looks free:
+		// the "Page n / m" label is drawn centred at navY + 5, so a button there
+		// sits on top of it.
 		int toggleWidth = 120;
 		craftableToggle = Button.builder(
 			craftableToggleLabel(),
 			button -> toggleCraftableOnly()
-		).bounds(gridX + (gridWidth - toggleWidth) / 2, navY, toggleWidth, 20).build();
+		).bounds(gridX + (gridWidth - toggleWidth) / 2, navY + 24, toggleWidth, 20).build();
 		this.addRenderableWidget(craftableToggle);
 
 		// Close button (X) in top-right corner
