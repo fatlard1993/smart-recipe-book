@@ -52,16 +52,9 @@ Click any recipe to see:
 
 - Compatible with Backpack Inventory mod (detects crafting grid size)
 
-## Requirements
-
-Targets the Minecraft, Fabric Loader, and Fabric API versions declared in this mod's `gradle.properties`; check there for the exact currently-supported version. Requires the Java version declared in `fabric.mod.json`.
-
 ## Installation
 
-1. Install [Fabric Loader](https://fabricmc.net/use/installer/)
-2. Download [Fabric API](https://modrinth.com/mod/fabric-api)
-3. Download Smart Recipe Book from Releases
-4. Drop both JARs in your `mods` folder
+Drop the jar in your client's `mods` folder alongside its declared dependencies (see `fabric.mod.json`). No server-side installation needed. Version targets live in `gradle.properties` (Minecraft, loader, Fabric API) and `fabric.mod.json` (Java).
 
 ## Building
 
@@ -79,4 +72,4 @@ To run a development client:
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
