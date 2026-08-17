@@ -18,6 +18,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.util.context.ContextMap;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.display.FurnaceRecipeDisplay;
 import net.minecraft.world.item.crafting.display.RecipeDisplay;
 import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
@@ -220,8 +221,15 @@ public class SmartRecipeBookScreen extends Screen {
 		applyFilters();
 	}
 
+	/**
+	 * Coloured to match the grid, and padded to leave room for the icon drawn over
+	 * it. Green button, green slots: the same green means the same thing in both
+	 * places, which is most of what makes it learnable without reading.
+	 */
 	private Component craftableToggleLabel() {
-		return Component.literal(craftableOnly ? "Craftable only" : "All recipes");
+		return craftableOnly
+			? Component.literal("   Can make").withStyle(ChatFormatting.GREEN)
+			: Component.literal("   Everything").withStyle(ChatFormatting.GRAY);
 	}
 
 	private void toggleCraftableOnly() {
@@ -416,6 +424,14 @@ public class SmartRecipeBookScreen extends Screen {
 			0xFFFFFFFF
 		);
 
+		// An item over the toggle, so the button says what it does with a picture as
+		// well as a word. A crafting table for "only what I can make", a book for
+		// "the whole book". Drawn after the widget so it sits on top of it.
+		if (craftableToggle != null) {
+			ItemStack toggleIcon = new ItemStack(craftableOnly ? Items.CRAFTING_TABLE : Items.BOOK);
+			context.item(toggleIcon, craftableToggle.getX() + 4, craftableToggle.getY() + 2);
+		}
+
 		int totalPages = Math.max(1, (displayedRecipes.size() + RECIPES_PER_PAGE - 1) / RECIPES_PER_PAGE);
 		context.centeredText(
 			this.font,
@@ -448,9 +464,27 @@ public class SmartRecipeBookScreen extends Screen {
 				hoveredRecipe = entry;
 			}
 
-			// Neutral styling for all items
-			int bgColor = hovered ? 0xFF444444 : 0xFF333333;
-			int borderColor = 0xFF666666;
+			// Can you make this right now? Said in colour, because the answer used
+			// to live in a hover tooltip and a child who cannot read yet has no way
+			// to reach it. Green and lit means yes; dim and grey means not yet.
+			// Brightness carries the same message as hue, so it still reads for a
+			// colour-blind player and on a washed-out TV.
+			//
+			// Only the visible page is asked, and the answers are cached, so this
+			// costs one recursive plan per recipe per screen rather than per frame.
+			// With the craftable-only filter on, everything here is craftable by
+			// definition and the question is not worth asking.
+			boolean canMake = craftableOnly || canCraftRecipeRecursive(entry, contextParams);
+
+			int bgColor;
+			int borderColor;
+			if (canMake) {
+				bgColor = hovered ? 0xFF2F5A34 : 0xFF264A2A;
+				borderColor = hovered ? 0xFF7FD98A : 0xFF5CA867;
+			} else {
+				bgColor = hovered ? 0xFF3A3A3A : 0xFF262626;
+				borderColor = 0xFF4A4A4A;
+			}
 
 			context.fill(slotX, slotY, slotX + SLOT_SIZE, slotY + SLOT_SIZE, bgColor);
 

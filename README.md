@@ -16,6 +16,7 @@ This is a **client-side only** mod: install it on your client, no server install
 
 - **Grid-aware filtering** - In your inventory (2x2 grid), you only see recipes you can actually craft there. At a crafting table (3x3), you see everything.
 - **Real craftability** - Recipes show as craftable when you have the materials, even if you need to craft intermediate items first.
+- **Readable without reading** - Every slot is coloured by whether you can make it right now: lit green for yes, dim grey for not yet. Brightness carries the same message as hue, so it survives colour-blindness and a washed-out TV. The filter button matches, and wears a crafting table or a book, so a child who cannot read the label can still work the screen.
 - **Craftable-only toggle** - Craftable-only is the default; the button under the page arrows switches to the full list. Craftability counts sub-crafting, and the choice sticks until you change it.
 - **Usage tracking** - Recipes you craft frequently appear first (resets each session).
 - **Search** - Type to filter recipes by name in real time.
