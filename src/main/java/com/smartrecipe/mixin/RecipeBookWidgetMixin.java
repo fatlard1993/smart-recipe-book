@@ -45,6 +45,12 @@ public abstract class RecipeBookWidgetMixin {
 	@Shadow
 	protected Minecraft minecraft;
 
+	@Shadow
+	public abstract boolean isVisible();
+
+	@Shadow
+	protected abstract void setVisible(boolean visible);
+
 	@Inject(
 		method = "toggleVisibility",
 		at = @At("HEAD"),
@@ -77,8 +83,26 @@ public abstract class RecipeBookWidgetMixin {
 			return; // Let vanilla handle it
 		}
 
+		// Vanilla's close lives past this cancel, and the flag it would have cleared is
+		// persisted and sent to the server - so a panel already open when this mod arrives
+		// stays open through every relog, behind our screen, shoving the inventory aside.
+		if (isVisible()) setVisible(false);
+
 		ci.cancel();
 		minecraft.gui.setScreen(new SmartRecipeBookScreen(current, mode));
+	}
+
+	/**
+	 * Shut the vanilla panel on the way in.
+	 *
+	 * <p>Closing it at the toggle only helps somebody who presses the button. A profile that
+	 * had the book open before this mod was installed opens every screen with the panel
+	 * already up, and nothing this mod does would ever take it down.
+	 */
+	@Inject(method = "init", at = @At("TAIL"))
+	private void onInit(int width, int height, Minecraft client, boolean narrow, CallbackInfo ci) {
+		if (!isVisible() || !RecipeCache.hasRecipes()) return;
+		setVisible(false);
 	}
 
 	@Inject(
