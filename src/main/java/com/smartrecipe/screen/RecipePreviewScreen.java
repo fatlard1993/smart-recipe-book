@@ -42,6 +42,18 @@ public class RecipePreviewScreen extends Screen {
 	private int craftQuantity = 1;
 	private int maxCraftable = 1;
 
+	/**
+	 * Items, from a number of trips through the grid.
+	 *
+	 * <p>Everything under this screen counts whole crafts, because a grid has no way to make
+	 * five sticks. Everything on it counts items, because that is what the player asked for.
+	 * Showing the craft count against an item name meant a recipe that yields four read
+	 * "Quantity: 2" and handed over eight.
+	 */
+	private int itemsFor(int crafts) {
+		return crafts * Math.max(1, resultStack.getCount());
+	}
+
 	private boolean showingConfirmation = false;
 	private int confirmationTicks = 0;
 	private static final int CONFIRMATION_DURATION = 15; // ~0.75 seconds
@@ -232,9 +244,9 @@ public class RecipePreviewScreen extends Screen {
 		drawCraftingGrid(context, panelX, panelY + 25, mouseX, mouseY);
 
 		if (!isFurnaceRecipe) {
-			String quantityText = "Quantity: " + craftQuantity;
+			String quantityText = "Quantity: " + itemsFor(craftQuantity);
 			if (maxCraftable > 1) {
-				quantityText += " / " + maxCraftable;
+				quantityText += " / " + itemsFor(maxCraftable);
 			}
 			int quantityColor = canCraft ? 0xFF44FF44 : 0xFFFF4444;
 
@@ -624,7 +636,7 @@ public class RecipePreviewScreen extends Screen {
 			int textAlpha = (int)(alpha * 255);
 			context.centeredText(
 				this.font,
-				Component.literal("✓ Crafted " + craftQuantity + "x " + resultStack.getHoverName().getString()),
+				Component.literal("✓ Crafted " + itemsFor(craftQuantity) + "x " + resultStack.getHoverName().getString()),
 				this.width / 2,
 				this.height / 2,
 				(textAlpha << 24) | 0xFFFFFF
