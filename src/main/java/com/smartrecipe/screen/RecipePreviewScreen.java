@@ -2,6 +2,7 @@ package com.smartrecipe.screen;
 
 import com.smartrecipe.SmartRecipeBookMod;
 import com.smartrecipe.crafting.AutoCraftExecutor;
+import com.smartrecipe.crafting.CraftPacketSender;
 import com.smartrecipe.recipe.CraftingPlan;
 import com.smartrecipe.recipe.RecipeCache;
 import com.smartrecipe.recipe.RecipeTreeCalculator;
@@ -38,6 +39,19 @@ public class RecipePreviewScreen extends Screen {
 	private final boolean isFurnaceRecipe;
 
 	private CraftingPlan craftingPlan;
+
+	/**
+	 * A recipe the planner cannot describe, handed to the server whole.
+	 *
+	 * <p>Map cloning, firework assembly, banner duplication and the rest are special recipes: they
+	 * have no fixed ingredient list, because what goes in depends on what you already hold. The
+	 * planner works from shaped and shapeless grids and returns nothing for them, which left the
+	 * craft button dead - copying a map through this book did nothing at all.
+	 *
+	 * <p>There is nothing to plan and nothing to sub-craft, so the answer is to stop trying and
+	 * ask the server to lay it out, which is exactly what vanilla's own book does with them.
+	 */
+	private boolean serverPlacedRecipe = false;
 	private boolean canCraft = false;
 	private int craftQuantity = 1;
 	private int maxCraftable = 1;
@@ -188,7 +202,10 @@ public class RecipePreviewScreen extends Screen {
 			craftingPlan = null;
 		} else {
 			craftingPlan = RecipeTreeCalculator.calculatePlan(minecraft, recipe.id());
-			canCraft = craftingPlan != null && craftingPlan.canCraft();
+			serverPlacedRecipe = craftingPlan == null;
+			// Offered rather than promised: whether the special recipe can actually be filled is
+			// the server's to judge, the same as it is from the vanilla book.
+			canCraft = serverPlacedRecipe || craftingPlan.canCraft();
 		}
 	}
 
@@ -208,7 +225,9 @@ public class RecipePreviewScreen extends Screen {
 	}
 
 	private void calculateMaxCraftable() {
-		if (!canCraft || minecraft == null) {
+		// A special recipe has no ingredient list to count, so there is no honest number here
+		// beyond one; the server places what it can.
+		if (!canCraft || serverPlacedRecipe || minecraft == null) {
 			maxCraftable = 1;
 			return;
 		}
@@ -675,7 +694,16 @@ public class RecipePreviewScreen extends Screen {
 	}
 
 	private void craftRecipe() {
-		if (!canCraft || craftingPlan == null || minecraft == null) return;
+		if (!canCraft || minecraft == null) return;
+
+		if (serverPlacedRecipe) {
+			CraftPacketSender.sendCraftRequest(recipe.id(), craftQuantity > 1);
+			showingConfirmation = true;
+			confirmationTicks = CONFIRMATION_DURATION;
+			return;
+		}
+
+		if (craftingPlan == null) return;
 
 		SmartRecipeBookMod.LOGGER.debug("Crafting {}x {} from preview", craftQuantity, resultStack.getHoverName().getString());
 
