@@ -235,6 +235,12 @@ public class RecipePreviewScreen extends Screen {
 		// Use RecipeTreeCalculator to calculate max craftable with sub-crafting support
 		maxCraftable = RecipeTreeCalculator.calculateMaxCraftable(minecraft, recipe.id());
 		SmartRecipeBookMod.LOGGER.debug("Max craftable for {}: {}", resultStack.getHoverName().getString(), maxCraftable);
+
+		// A number chosen against the old maximum has to be brought back inside the new one.
+		// Only adjustQuantity clamped, so a quantity that was legal when it was picked survived
+		// a recount that made it illegal - the label went on promising it and the crafting went
+		// on trying for it.
+		craftQuantity = Math.max(1, Math.min(maxCraftable, craftQuantity));
 	}
 
 	@Override
@@ -697,7 +703,11 @@ public class RecipePreviewScreen extends Screen {
 		if (!canCraft || minecraft == null) return;
 
 		if (serverPlacedRecipe) {
-			CraftPacketSender.sendCraftRequest(recipe.id(), craftQuantity > 1);
+			// Never craftAll. There is no ingredient list to count here, so the screen offers a
+			// maximum of one and this is the one craft it offered - handing the server a boolean
+			// derived from the quantity turned "give me two" into "give me as many as you can",
+			// which is how asking for a small number produced a stack.
+			CraftPacketSender.sendCraftRequest(recipe.id(), false);
 			showingConfirmation = true;
 			confirmationTicks = CONFIRMATION_DURATION;
 			return;
