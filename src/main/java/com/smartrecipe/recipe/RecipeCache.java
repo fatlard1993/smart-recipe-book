@@ -188,6 +188,16 @@ public class RecipeCache {
 
 	// --- Recipe type filters ---
 
+	/**
+	 * What a crafting table can actually make.
+	 *
+	 * <p>Shape is not enough on its own. A modded station's recipes can be shaped exactly like a
+	 * workbench's - a fletching table's are a width, a height and nine ingredients - and they
+	 * arrive here looking identical, but putting them in a workbench's book offers the player
+	 * something that will not craft when they click it. The recipe's own book category is what
+	 * separates the two, and a category outside the vanilla namespace means the recipe belongs to
+	 * a station somewhere else.
+	 */
 	public static List<RecipeDisplayEntry> getCraftingRecipes() {
 		return recipes.values().stream()
 			.filter(entry -> {
@@ -195,7 +205,15 @@ public class RecipeCache {
 				return display instanceof ShapedCraftingRecipeDisplay ||
 					   display instanceof ShapelessCraftingRecipeDisplay;
 			})
+			.filter(RecipeCache::isVanillaStation)
 			.collect(Collectors.toList());
+	}
+
+	/** Whether this recipe belongs to a station the vanilla book speaks for. */
+	private static boolean isVanillaStation(RecipeDisplayEntry entry) {
+		var key = net.minecraft.core.registries.BuiltInRegistries.RECIPE_BOOK_CATEGORY
+			.getKey(entry.category());
+		return key == null || key.getNamespace().equals("minecraft");
 	}
 
 	public static List<RecipeDisplayEntry> getFurnaceRecipes() {
