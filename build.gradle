@@ -34,6 +34,27 @@ dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+	// Optional: a Pandorical screen can declare itself a crafting station, and this book is what
+	// answers for one. Compile-only and never bundled, guarded at runtime, so this mod still
+	// works alone on a vanilla server.
+	//
+	// Resolved by the version Pandorical declares rather than one written down here: Gradle never
+	// clears build/libs, so a name pinned by hand keeps compiling green against a jar an old
+	// build left behind.
+	def pandoricalProperties = file("../pandorical/gradle.properties")
+	if (pandoricalProperties.exists()) {
+		def pandoricalVersion = new Properties().with {
+			pandoricalProperties.withInputStream { load(it) }
+			getProperty("mod_version")?.trim()
+		}
+		def pandoricalJar = file("../pandorical/build/libs/pandorical-${pandoricalVersion}.jar")
+		if (!pandoricalJar.exists()) {
+			throw new GradleException("pandorical ${pandoricalVersion} is not built. Run" +
+				" `mc-build pandorical` first - this mod compiles against its screen API.")
+		}
+		compileOnly files(pandoricalJar)
+	}
 }
 
 processResources {

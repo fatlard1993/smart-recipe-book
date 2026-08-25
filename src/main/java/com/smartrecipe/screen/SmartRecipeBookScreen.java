@@ -69,18 +69,33 @@ public class SmartRecipeBookScreen extends Screen {
 
 	private RecipeDisplayEntry hoveredRecipe = null;
 
+	/** Which station's recipes to show, when the mode is {@link RecipeMode#STATION}. */
+	private final String stationCategory;
+
 
 	public SmartRecipeBookScreen(Screen parent) {
 		this(parent, RecipeMode.CRAFTING);
 	}
 
 	public SmartRecipeBookScreen(Screen parent, RecipeMode mode) {
+		this(parent, mode, null);
+	}
+
+	/**
+	 * @param stationCategory the recipe book category to show, for {@link RecipeMode#STATION};
+	 *                        ignored by every other mode
+	 */
+	public SmartRecipeBookScreen(Screen parent, RecipeMode mode, String stationCategory) {
 		super(Component.literal("Smart Recipe Book"));
 		this.parent = parent;
 		this.recipeMode = mode;
+		this.stationCategory = stationCategory;
 
-		// Determine crafting grid size from parent screen (only relevant for crafting mode)
-		this.craftingGridSize = mode == RecipeMode.CRAFTING ? detectCraftingGridSize(parent) : 1;
+		// Determine crafting grid size from parent screen (only relevant for crafting mode).
+		// A station is a bench too, so it gets the same three-by-three assumption.
+		this.craftingGridSize =
+			mode == RecipeMode.CRAFTING || mode == RecipeMode.STATION
+				? detectCraftingGridSize(parent) : 1;
 	}
 
 	/**
@@ -186,6 +201,10 @@ public class SmartRecipeBookScreen extends Screen {
 			case SMOKER:
 				allRecipes = RecipeCache.getSmokerRecipes();
 				break;
+			case STATION:
+				allRecipes = stationCategory == null
+					? java.util.List.of() : RecipeCache.getStationRecipes(stationCategory);
+				break;
 			default:
 				allRecipes = RecipeCache.getCraftingRecipes();
 				break;
@@ -254,7 +273,8 @@ public class SmartRecipeBookScreen extends Screen {
 
 		for (RecipeDisplayEntry entry : allRecipes) {
 			// Check if recipe fits current crafting grid (only for crafting mode)
-			if (recipeMode == RecipeMode.CRAFTING && !fitsInGrid(entry)) {
+			if ((recipeMode == RecipeMode.CRAFTING || recipeMode == RecipeMode.STATION)
+				&& !fitsInGrid(entry)) {
 				continue;
 			}
 

@@ -1,18 +1,19 @@
 {
-	"required": true,
-	"package": "com.smartrecipe.mixin",
-	"minVersion": "0.8",
-	"compatibilityLevel": "JAVA_21",
-	"injectors": {
-		"defaultRequire": 1
-	},
-	"mixins": [
-		"ServerRecipeManagerAccessor"
-	],
-	"client": [
-		"RecipeBookWidgetMixin",
-		"ClientPlayNetworkHandlerMixin",
-		"RecipeResultCollectionMixin",
-		"RecipeToastMixin"
-	]
+  "required": true,
+  "package": "com.smartrecipe.mixin",
+  "minVersion": "0.8",
+  "compatibilityLevel": "JAVA_21",
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "mixins": [
+    "ServerRecipeManagerAccessor"
+  ],
+  "client": [
+    "ClientPlayNetworkHandlerMixin",
+    "PandoricalStationBookMixin",
+    "RecipeBookWidgetMixin",
+    "RecipeResultCollectionMixin",
+    "RecipeToastMixin"
+  ]
 }

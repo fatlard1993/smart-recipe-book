@@ -10,7 +10,10 @@ public enum RecipeMode {
 
 	BLAST_FURNACE("Blast Furnace"),
 
-	SMOKER("Smoking");
+	SMOKER("Smoking"),
+
+	/** Somebody else's crafting bench, named by the recipe book category it works from. */
+	STATION("Station");
 
 	private final String displayName;
 

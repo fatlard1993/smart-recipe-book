@@ -209,6 +209,22 @@ public class RecipeCache {
 			.collect(Collectors.toList());
 	}
 
+	/**
+	 * Everything one named station can make.
+	 *
+	 * <p>The mirror of {@link #getCraftingRecipes()}: that one drops every category a workbench
+	 * cannot craft, and this one keeps exactly the category asked for.
+	 */
+	public static List<RecipeDisplayEntry> getStationRecipes(String categoryId) {
+		return recipes.values().stream()
+			.filter(entry -> {
+				var key = net.minecraft.core.registries.BuiltInRegistries.RECIPE_BOOK_CATEGORY
+					.getKey(entry.category());
+				return key != null && key.toString().equals(categoryId);
+			})
+			.collect(Collectors.toList());
+	}
+
 	/** Whether this recipe belongs to a station the vanilla book speaks for. */
 	private static boolean isVanillaStation(RecipeDisplayEntry entry) {
 		var key = net.minecraft.core.registries.BuiltInRegistries.RECIPE_BOOK_CATEGORY
