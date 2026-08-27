@@ -9,6 +9,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -31,6 +32,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * so the button opens the book to look things up and stops there - the honest half of the job
  * rather than a fill that silently does nothing.
  */
+@Pseudo
 @Mixin(PandoricalContainerScreen.class)
 public abstract class PandoricalStationBookMixin extends Screen {
 
