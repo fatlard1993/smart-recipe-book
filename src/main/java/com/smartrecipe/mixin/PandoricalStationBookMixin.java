@@ -2,10 +2,12 @@ package com.smartrecipe.mixin;
 
 import com.smartrecipe.recipe.RecipeCache;
 import com.smartrecipe.screen.RecipeMode;
-import com.smartrecipe.screen.SmartRecipeBookScreen;
+import com.smartrecipe.screen.RecipeBookScreens;
 import justfatlard.pandorical.client.screen.PandoricalContainerScreen;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.ImageButton;
+import net.minecraft.client.gui.components.WidgetSprites;
+import net.minecraft.resources.Identifier;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
@@ -36,6 +38,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(PandoricalContainerScreen.class)
 public abstract class PandoricalStationBookMixin extends Screen {
 
+	/** Vanilla's own knowledge-book button, at vanilla's own offset inside the panel. */
+	private static final WidgetSprites BOOK_BUTTON_SPRITES = new WidgetSprites(
+		Identifier.withDefaultNamespace("recipe_book/button"),
+		Identifier.withDefaultNamespace("recipe_book/button_highlighted"));
+	private static final int BOOK_BUTTON_X = 5;
+	private static final int BOOK_BUTTON_Y = 33;
+	private static final int BOOK_BUTTON_W = 20;
+	private static final int BOOK_BUTTON_H = 18;
+
 	private PandoricalStationBookMixin() {
 		super(null);
 	}
@@ -47,12 +58,18 @@ public abstract class PandoricalStationBookMixin extends Screen {
 		self.getRecipeStation().ifPresent(category -> {
 			if (!RecipeCache.hasRecipes()) return;
 
-			// Top-left of the panel, where the vanilla book toggle sits on a crafting table, so
-			// the hand already goes there.
-			this.addRenderableWidget(Button.builder(Component.literal("☰"), button -> {
-				Minecraft client = Minecraft.getInstance();
-				client.gui.setScreen(new SmartRecipeBookScreen(self, RecipeMode.STATION, category));
-			}).bounds(this.width / 2 - 100, this.height / 2 - 84, 20, 20).build());
+			// Where the vanilla book toggle sits on a crafting table, so the hand already goes
+			// there: measured from the panel's own corner, not from the middle of the window.
+			// Off screen centre it only lands correctly on a panel of one particular size, and
+			// it misses entirely once the recipe book pane shoves the panel sideways.
+			this.addRenderableWidget(new ImageButton(
+				self.getPanelX() + BOOK_BUTTON_X, self.getPanelY() + BOOK_BUTTON_Y,
+				BOOK_BUTTON_W, BOOK_BUTTON_H, BOOK_BUTTON_SPRITES,
+				button -> {
+					Minecraft client = Minecraft.getInstance();
+					client.gui.setScreen(RecipeBookScreens.open(self, RecipeMode.STATION, category));
+				},
+				Component.translatable("gui.recipebook.toggleRecipes.craftable")));
 		});
 	}
 }

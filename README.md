@@ -1,6 +1,26 @@
 # Smart Recipe Book
 
-A client-side Fabric mod that completely replaces Minecraft's recipe book with a smarter, more useful alternative. No more digging through cluttered recipe lists or manually crafting intermediate materials.
+A Fabric mod that completely replaces Minecraft's recipe book with a smarter, more useful alternative. No more digging through cluttered recipe lists or manually crafting intermediate materials.
+
+## A recipe you click is a recipe you know
+
+The game lays a recipe out only for a player whose recipe book already contains it, and a recipe
+gets into the book through an unlock advancement that a mod may never have written. The book
+would show such a recipe, because the catalog carries every recipe the server has, and clicking it
+did nothing at all. Now the click teaches it: with the ingredients in hand and the recipe asked for
+by name, the server awards it and lays it out in the same motion.
+
+## On a gamepad
+
+The recipe grid is painted rather than built out of widgets, which is right for a few dozen icons
+and leaves it invisible to anything reading `Screen.children()` - a gamepad navigator would reach
+the search box, the filter and the pager, and not one recipe.
+
+So the screen advertises its slots through Pandorical's `NavigableScreen`, the same channel
+Pandorical's own screens use, and couch-controls picks them up knowing nothing about this mod.
+Only the slots actually filled on the page are offered; landing on the empty tail of the last row
+is landing on nothing. Pandorical stays a suggestion rather than a requirement: the class that
+names it is separate, and a client without it never constructs that one.
 
 ## What It Does
 
@@ -8,7 +28,7 @@ Open your inventory, crafting table, or any furnace and click the recipe book bu
 
 **The main idea:** If you have the raw materials to make something (even through multiple crafting steps), this mod shows it as craftable and handles the intermediate crafting for you.
 
-This is a **client-side only** mod: install it on your client, no server installation needed. In singleplayer, it shows all recipes regardless of unlock status. On multiplayer servers, it shows recipes the server has sent to your client.
+Install it on your client. In singleplayer, it shows all recipes regardless of unlock status. On a multiplayer server, install it there too and you get the same: the server sends the whole recipe list, so sub-crafting can chain through recipes you have not unlocked yet. On a server without it, the book only knows the recipes you have unlocked, and a chain can only run through those.
 
 ## Features
 
@@ -29,7 +49,7 @@ Want to craft a lantern but only have iron ingots, logs, and coal? The mod figur
 - Calculates the full crafting tree automatically
 - Identifies what intermediate items you need to make
 - Executes each crafting step in sequence
-- Choose how many to craft with the quantity selector
+- Choose how many to craft with the quantity selector: `-` / `+` step one at a time, `--` / `++` two at a time, and **Max** goes straight to as many as your materials allow
 
 ### Furnace Support
 
@@ -54,23 +74,9 @@ Click any recipe to see:
 
 - Compatible with Backpack Inventory mod (detects crafting grid size)
 
-## Installation
+## Development
 
-Drop the jar in your client's `mods` folder alongside its declared dependencies (see `fabric.mod.json`). No server-side installation needed. Version targets live in `gradle.properties` (Minecraft, loader, Fabric API) and `fabric.mod.json` (Java).
-
-## Building
-
-```bash
-./gradlew build
-```
-
-Output JAR is in `build/libs/`.
-
-To run a development client:
-
-```bash
-./gradlew runClient
-```
+Installing and building are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## License
 

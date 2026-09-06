@@ -21,8 +21,11 @@ import net.minecraft.world.item.crafting.display.SlotDisplayContext;
  */
 public class RecipeTreeCalculator {
 
-	private static final Map<Item, RecipeDisplayEntry> recipeForItemCache = new HashMap<>();
-	private static final Set<Item> itemsWithNoRecipe = new HashSet<>();
+	/** Main inventory plus hotbar; armour and offhand are no use to a craft. */
+	private static final int INVENTORY_SLOTS = 36;
+
+	/** Keyed by item, holding every recipe that makes it; see {@link #findRecipesForItem}. */
+	private static final Map<Item, List<RecipeDisplayEntry>> recipesForItemCache = new HashMap<>();
 	private static long lastCacheClear = 0;
 
 	// TTL keeps recipe lookups responsive to inventory changes without
@@ -41,6 +44,18 @@ public class RecipeTreeCalculator {
 	 * @return A CraftingPlan, or null if no special handling needed
 	 */
 	public static CraftingPlan calculatePlan(Minecraft client, RecipeDisplayId recipeId) {
+		return calculatePlan(client, recipeId, 1);
+	}
+
+	/**
+	 * The steps for making this many, in order, against one running inventory.
+	 *
+	 * <p>Not the one-craft plan repeated: four torches take one stick craft, not four, because
+	 * the first craft's spare sticks carry into the next. Repeating the plan spent planks the
+	 * estimate of how many could be made never spent, and the run outran the planks. This walks
+	 * the same simulation the estimate walks, and keeps the steps it takes.
+	 */
+	public static CraftingPlan calculatePlan(Minecraft client, RecipeDisplayId recipeId, int quantity) {
 		if (client.player == null || client.level == null) return null;
 
 		RecipeDisplayEntry entry = RecipeCache.getRecipe(recipeId);
@@ -58,19 +73,25 @@ public class RecipeTreeCalculator {
 
 		CraftingPlan plan = new CraftingPlan(recipeId, resultStack);
 
-		Set<Item> visited = new HashSet<>();
-		List<CraftingPlan.CraftingStep> steps = new ArrayList<>();
-		boolean success = calculateDependencies(client, entry, inventory, visited, steps, contextParams, 0);
-
-		if (success) {
+		boolean success = true;
+		for (int made = 0; made < Math.max(1, quantity); made++) {
+			Set<Item> visited = new HashSet<>();
+			List<CraftingPlan.CraftingStep> steps = new ArrayList<>();
+			if (!calculateDependencies(client, entry, inventory, visited, steps, contextParams, 0)) {
+				success = false;
+				break;
+			}
 			for (CraftingPlan.CraftingStep step : steps) {
 				plan.addStep(step);
 			}
-		} else {
-			plan.setCanCraft(false);
+			plan.addStep(new CraftingPlan.CraftingStep(recipeId, resultStack));
+			// What this craft made is in hand for the next one.
+			inventory.merge(resultStack.getItem(), resultStack.getCount(), Integer::sum);
 		}
-
-		plan.addStep(new CraftingPlan.CraftingStep(recipeId, resultStack));
+		if (!success) {
+			plan.setCanCraft(false);
+			if (plan.getSteps().isEmpty()) plan.addStep(new CraftingPlan.CraftingStep(recipeId, resultStack));
+		}
 
 		SmartRecipeBookMod.LOGGER.debug("Plan for {}: {} steps, canCraft={}",
 			resultStack.getHoverName().getString(), plan.getSteps().size(), plan.canCraft());
@@ -121,21 +142,26 @@ public class RecipeTreeCalculator {
 				// Circular dependency: skip this ingredient option
 				if (visited.contains(neededItem)) continue;
 
-				RecipeDisplayEntry subRecipe = findRecipeForItem(neededItem, contextParams, inventory);
-				if (subRecipe != null) {
-					visited.add(neededItem);
-					boolean subSuccess = calculateDependencies(client, subRecipe, inventory, visited, steps, contextParams, depth + 1);
-
-					if (subSuccess) {
-						ItemStack subResult = getResultItem(subRecipe.display(), contextParams);
-						steps.add(new CraftingPlan.CraftingStep(subRecipe.id(), subResult));
-						inventory.merge(neededItem, subResult.getCount() - 1, Integer::sum);
-						visited.remove(neededItem);
-						foundIngredient = true;
-						break;
+				visited.add(neededItem);
+				for (RecipeDisplayEntry subRecipe : findRecipesForItem(neededItem, contextParams, inventory)) {
+					// Inventory and steps both roll back: a half-built plan for a candidate that
+					// turned out not to work would otherwise be left in the plan that ships
+					Map<Item, Integer> attempt = new HashMap<>(inventory);
+					int stepsBefore = steps.size();
+					if (!calculateDependencies(client, subRecipe, attempt, visited, steps, contextParams, depth + 1)) {
+						steps.subList(stepsBefore, steps.size()).clear();
+						continue;
 					}
-					visited.remove(neededItem);
+					ItemStack subResult = getResultItem(subRecipe.display(), contextParams);
+					steps.add(new CraftingPlan.CraftingStep(subRecipe.id(), subResult));
+					attempt.merge(neededItem, subResult.getCount() - 1, Integer::sum);
+					inventory.clear();
+					inventory.putAll(attempt);
+					foundIngredient = true;
+					break;
 				}
+				visited.remove(neededItem);
+				if (foundIngredient) break;
 			}
 
 			if (!foundIngredient) {
@@ -149,50 +175,51 @@ public class RecipeTreeCalculator {
 	private static void clearCacheIfExpired() {
 		long now = System.currentTimeMillis();
 		if (now - lastCacheClear > CACHE_TTL_MS) {
-			recipeForItemCache.clear();
-			itemsWithNoRecipe.clear();
+			recipesForItemCache.clear();
 			lastCacheClear = now;
 		}
 	}
 
-	private static RecipeDisplayEntry findRecipeForItem(Item item, ContextMap contextParams, Map<Item, Integer> inventory) {
+	/**
+	 * Every crafting recipe that produces this item, best candidate first.
+	 *
+	 * <p>All of them, not one. This used to answer with a single recipe and cache it per item,
+	 * which quietly decided that an item had one way to be made: sticks resolved to whichever
+	 * recipe the list happened to reach first, and if that was the bamboo one, a player holding
+	 * logs was told a pickaxe was not craftable until they broke the logs down by hand. The
+	 * caller now tries them in turn, so an item is uncraftable only when every way to make it is.
+	 *
+	 * <p>Ordered by whether the current simulated inventory can make it outright, which keeps the
+	 * old preference for the shallow answer without letting it be the only answer. The cache is
+	 * the list, not the choice: the list does not depend on what the player is carrying, so it
+	 * cannot go stale the way the choice did.
+	 */
+	private static List<RecipeDisplayEntry> findRecipesForItem(
+			Item item, ContextMap contextParams, Map<Item, Integer> inventory) {
 		clearCacheIfExpired();
 
-		if (recipeForItemCache.containsKey(item)) {
-			return recipeForItemCache.get(item);
-		}
-		if (itemsWithNoRecipe.contains(item)) {
-			return null;
-		}
-
-		RecipeDisplayEntry fallbackRecipe = null;
-
-		for (var entry : RecipeCache.getAllRecipes()) {
-			RecipeDisplay display = entry.display();
-			if (!(display instanceof ShapedCraftingRecipeDisplay) &&
-				!(display instanceof ShapelessCraftingRecipeDisplay)) {
-				continue;
-			}
-
-			ItemStack result = getResultItem(display, contextParams);
-			if (result.getItem() == item) {
-				// Prefer recipes we can craft with current inventory
-				if (canCraftDirect(display, contextParams, inventory)) {
-					recipeForItemCache.put(item, entry);
-					return entry;
+		List<RecipeDisplayEntry> candidates = recipesForItemCache.get(item);
+		if (candidates == null) {
+			candidates = new ArrayList<>();
+			for (var entry : RecipeCache.getAllRecipes()) {
+				RecipeDisplay display = entry.display();
+				if (!(display instanceof ShapedCraftingRecipeDisplay)
+					&& !(display instanceof ShapelessCraftingRecipeDisplay)) {
+					continue;
 				}
-				if (fallbackRecipe == null) {
-					fallbackRecipe = entry;
+				if (getResultItem(display, contextParams).getItem() == item) {
+					candidates.add(entry);
 				}
 			}
+			recipesForItemCache.put(item, List.copyOf(candidates));
+			candidates = recipesForItemCache.get(item);
 		}
+		if (candidates.size() < 2) return candidates;
 
-		if (fallbackRecipe != null) {
-			recipeForItemCache.put(item, fallbackRecipe);
-		} else {
-			itemsWithNoRecipe.add(item);
-		}
-		return fallbackRecipe;
+		List<RecipeDisplayEntry> ordered = new ArrayList<>(candidates);
+		ordered.sort(java.util.Comparator.comparing(
+			e -> canCraftDirect(e.display(), contextParams, inventory) ? 0 : 1));
+		return ordered;
 	}
 
 	/**
@@ -264,10 +291,42 @@ public class RecipeTreeCalculator {
 	 * Get the contents of a player's inventory as item counts.
 	 * Includes main inventory (0-35) and offhand (40).
 	 */
+	/**
+	 * Empty slots in the player's own inventory, hotbar included.
+	 *
+	 * <p>Empty ones only, and deliberately: a partly filled stack can absorb more of its own item
+	 * but says nothing about whether it can take an intermediate, and guessing generously here is
+	 * the direction that loses items rather than the direction that nags.
+	 */
+	public static int freeInventorySlots(LocalPlayer player) {
+		int free = 0;
+		for (int slot = 0; slot < INVENTORY_SLOTS; slot++) {
+			if (player.getInventory().getItem(slot).isEmpty()) free++;
+		}
+		return free;
+	}
+
+	/**
+	 * Slots a plan needs somewhere to put things down.
+	 *
+	 * <p>One per distinct item the plan makes. A sub-craft's output has to land in the inventory
+	 * before the step that consumes it can run, so the intermediates are as real a demand on space
+	 * as the thing being built - and a plan with no sub-crafting at all needs only the one slot for
+	 * what it makes.
+	 */
+	public static int slotsNeededFor(CraftingPlan plan) {
+		Set<Item> distinct = new HashSet<>();
+		for (CraftingPlan.CraftingStep step : plan.getSteps()) {
+			ItemStack result = step.getResult();
+			if (!result.isEmpty()) distinct.add(result.getItem());
+		}
+		return distinct.size();
+	}
+
 	public static Map<Item, Integer> getInventoryContents(LocalPlayer player) {
 		Map<Item, Integer> contents = new HashMap<>();
 
-		for (int i = 0; i < 36; i++) {
+		for (int i = 0; i < INVENTORY_SLOTS; i++) {
 			ItemStack stack = player.getInventory().getItem(i);
 			if (!stack.isEmpty()) {
 				contents.merge(stack.getItem(), stack.getCount(), Integer::sum);
@@ -367,22 +426,23 @@ public class RecipeTreeCalculator {
 
 				if (visited.contains(neededItem)) continue;
 
-				RecipeDisplayEntry subRecipe = findRecipeForItem(neededItem, contextParams, inventory);
-				if (subRecipe != null) {
-					visited.add(neededItem);
-
-					if (canCraftOnce(client, subRecipe, inventory, visited, contextParams, depth + 1)) {
-						ItemStack subResult = getResultItem(subRecipe.display(), contextParams);
-						int produced = subResult.getCount();
-						inventory.merge(neededItem, produced, Integer::sum);
-
-						inventory.put(neededItem, inventory.get(neededItem) - 1);
-						visited.remove(neededItem);
-						foundIngredient = true;
-						break;
+				visited.add(neededItem);
+				for (RecipeDisplayEntry subRecipe : findRecipesForItem(neededItem, contextParams, inventory)) {
+					// On its own copy: a sub-craft that fails half way has already spent things
+					// out of the simulation, and the next candidate must not start from that
+					Map<Item, Integer> attempt = new HashMap<>(inventory);
+					if (!canCraftOnce(client, subRecipe, attempt, visited, contextParams, depth + 1)) {
+						continue;
 					}
-					visited.remove(neededItem);
+					int produced = getResultItem(subRecipe.display(), contextParams).getCount();
+					attempt.merge(neededItem, produced - 1, Integer::sum);
+					inventory.clear();
+					inventory.putAll(attempt);
+					foundIngredient = true;
+					break;
 				}
+				visited.remove(neededItem);
+				if (foundIngredient) break;
 			}
 
 			if (!foundIngredient) return false;

@@ -17,6 +17,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.util.context.ContextMap;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import com.smartrecipe.brewing.BrewingRecipeEntry;
 import net.minecraft.world.item.crafting.display.FurnaceRecipeDisplay;
 import net.minecraft.world.item.crafting.display.RecipeDisplay;
 import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
@@ -52,6 +53,7 @@ public class RecipePreviewScreen extends Screen {
 	 * ask the server to lay it out, which is exactly what vanilla's own book does with them.
 	 */
 	private boolean serverPlacedRecipe = false;
+	private final boolean isBrewingRecipe;
 	private boolean canCraft = false;
 	private int craftQuantity = 1;
 	private int maxCraftable = 1;
@@ -69,10 +71,21 @@ public class RecipePreviewScreen extends Screen {
 	}
 
 	private boolean showingConfirmation = false;
+	/** Slots the plan needs beyond what the player has free; zero when there is room. */
+	private int slotsShort = 0;
 	private int confirmationTicks = 0;
 	private static final int CONFIRMATION_DURATION = 15; // ~0.75 seconds
 
 	private Button craftButton;
+	private Button maxButton;
+	private Button coarseMinusButton;
+	private Button coarsePlusButton;
+
+	/** How many crafts the coarse steppers move by. */
+	private static final int COARSE_STEP = 2;
+	private static final int STEP_W = 20;
+	private static final int MAX_W = 44;
+	private static final int GAP = 6;
 	private Button cancelButton;
 	private Button plusButton;
 	private Button minusButton;
@@ -108,6 +121,12 @@ public class RecipePreviewScreen extends Screen {
 		this.parent = parent;
 		this.recipe = recipe;
 
+		// True for a brew as well, and meant to be: a brewing entry carries a furnace display, and
+		// what this flag actually decides is the layout - no quantity row, and a Close button where
+		// Craft would go. That is the right screen for a brew too. Nothing here can load a stand:
+		// a brew is three bottles, a reagent, fuel and twenty seconds, with no packet that means
+		// "make this". The reagent is the answer; doing it is the player's.
+		this.isBrewingRecipe = RecipeCache.getBrewing(recipe.id()) != null;
 		this.isFurnaceRecipe = recipe.display() instanceof FurnaceRecipeDisplay;
 		this.craftingGridSize = isFurnaceRecipe ? 1 : craftingGridSize;
 
@@ -141,17 +160,43 @@ public class RecipePreviewScreen extends Screen {
 		int quantityY = panelY + PANEL_HEIGHT - 60;
 
 		if (!isFurnaceRecipe) {
+			// One row, symmetric about the panel's middle: the coarse steppers outside the fine
+			// ones, and Max in the centre where the eye already is because the count sits above
+			// it. Every offset below is measured from that middle rather than written down, so
+			// the row stays balanced if a width changes.
+			int middle = panelX + PANEL_WIDTH / 2;
+
+			coarseMinusButton = Button.builder(
+				Component.literal("--"),
+				button -> adjustQuantity(-COARSE_STEP)
+			).bounds(middle - MAX_W / 2 - GAP - STEP_W - GAP - STEP_W, quantityY, STEP_W, 20).build();
+			this.addRenderableWidget(coarseMinusButton);
+
 			minusButton = Button.builder(
 				Component.literal("-"),
 				button -> adjustQuantity(-1)
-			).bounds(panelX + 50, quantityY, 20, 20).build();
+			).bounds(middle - MAX_W / 2 - GAP - STEP_W, quantityY, STEP_W, 20).build();
 			this.addRenderableWidget(minusButton);
+
+			// Tapping + up to a full stack is the same instruction thirty times over, and the
+			// number it is walking toward is already on the screen.
+			maxButton = Button.builder(
+				Component.literal("Max"),
+				button -> setQuantity(maxCraftable)
+			).bounds(middle - MAX_W / 2, quantityY, MAX_W, 20).build();
+			this.addRenderableWidget(maxButton);
 
 			plusButton = Button.builder(
 				Component.literal("+"),
 				button -> adjustQuantity(1)
-			).bounds(panelX + 130, quantityY, 20, 20).build();
+			).bounds(middle + MAX_W / 2 + GAP, quantityY, STEP_W, 20).build();
 			this.addRenderableWidget(plusButton);
+
+			coarsePlusButton = Button.builder(
+				Component.literal("++"),
+				button -> adjustQuantity(COARSE_STEP)
+			).bounds(middle + MAX_W / 2 + GAP + STEP_W + GAP, quantityY, STEP_W, 20).build();
+			this.addRenderableWidget(coarsePlusButton);
 		}
 
 		if (isFurnaceRecipe) {
@@ -179,7 +224,12 @@ public class RecipePreviewScreen extends Screen {
 	}
 
 	private void adjustQuantity(int delta) {
-		craftQuantity = Math.max(1, Math.min(maxCraftable, craftQuantity + delta));
+		setQuantity(craftQuantity + delta);
+	}
+
+	/** Clamped in one place, so Max and the steppers cannot disagree about the bounds. */
+	private void setQuantity(int wanted) {
+		craftQuantity = Math.max(1, Math.min(maxCraftable, wanted));
 		updateQuantityButtons();
 	}
 
@@ -190,6 +240,19 @@ public class RecipePreviewScreen extends Screen {
 		if (plusButton != null) {
 			plusButton.active = craftQuantity < maxCraftable && canCraft;
 		}
+		// Greyed at the top rather than hidden: a control that vanishes when it has nothing left
+		// to do reads as a bug, and its absence is what you would check for first
+		if (maxButton != null) {
+			maxButton.active = craftQuantity < maxCraftable && canCraft;
+		}
+		// The coarse pair follows its own direction, not its step size: at one short of the
+		// maximum ++ still gets you there, because setQuantity clamps rather than refuses.
+		if (coarseMinusButton != null) {
+			coarseMinusButton.active = craftQuantity > 1;
+		}
+		if (coarsePlusButton != null) {
+			coarsePlusButton.active = craftQuantity < maxCraftable && canCraft;
+		}
 	}
 
 	private void calculateCraftability() {
@@ -197,15 +260,29 @@ public class RecipePreviewScreen extends Screen {
 
 		ContextMap contextParams = SlotDisplayContext.fromLevel(minecraft.level);
 
-		if (isFurnaceRecipe) {
+		if (isBrewingRecipe) {
+			// Asked of the real stacks. The smelting check below would answer this one wrong in
+			// the flattering direction: it counts by item, and every potion is the same item, so
+			// holding any potion at all would read as holding the one this brew starts from.
+			BrewingRecipeEntry brew = RecipeCache.getBrewing(recipe.id());
+			canCraft = brew.inputs().stream().anyMatch(this::holdsBrewingStack)
+				&& brew.reagents().stream().anyMatch(this::holdsBrewingStack);
+			craftingPlan = null;
+		} else if (isFurnaceRecipe) {
 			canCraft = hasSmeltingIngredient(contextParams);
 			craftingPlan = null;
 		} else {
-			craftingPlan = RecipeTreeCalculator.calculatePlan(minecraft, recipe.id());
+			// A station has no grid of the player's own to plan through, so it takes the same
+			// route a special recipe does: ask the server to lay it out and let the player take
+			// the result off the bench, which is what a book does at a crafting table.
+			craftingPlan = com.smartrecipe.crafting.CraftPacketSender.atStation(minecraft)
+				? null
+				: RecipeTreeCalculator.calculatePlan(minecraft, recipe.id());
 			serverPlacedRecipe = craftingPlan == null;
 			// Offered rather than promised: whether the special recipe can actually be filled is
 			// the server's to judge, the same as it is from the vanilla book.
 			canCraft = serverPlacedRecipe || craftingPlan.canCraft();
+			slotsShort = craftingPlan == null ? 0 : shortfall(craftingPlan);
 		}
 	}
 
@@ -222,6 +299,23 @@ public class RecipePreviewScreen extends Screen {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * How many slots short of running this plan the player is.
+	 *
+	 * <p>Worth saying out loud because running out of room does not fail politely. A sub-craft's
+	 * output is taken out of the grid by a shift-click, and a shift-click into a full inventory
+	 * moves nothing - so the intermediate sits in the grid until the next step lays its own recipe
+	 * over the top of it, and what was crafted is gone. Being told beforehand costs nothing; the
+	 * alternative is materials disappearing with no message at all.
+	 */
+	private int shortfall(CraftingPlan plan) {
+		if (minecraft == null || minecraft.player == null) return 0;
+
+		int needed = RecipeTreeCalculator.slotsNeededFor(plan);
+		int free = RecipeTreeCalculator.freeInventorySlots(minecraft.player);
+		return Math.max(0, needed - free);
 	}
 
 	private void calculateMaxCraftable() {
@@ -282,6 +376,18 @@ public class RecipePreviewScreen extends Screen {
 				panelY + 105,
 				quantityColor
 			);
+
+			if (slotsShort > 0) {
+				context.centeredText(
+					this.font,
+					Component.literal(slotsShort == 1
+						? "⚠ Need 1 more inventory slot"
+						: "⚠ Need " + slotsShort + " more inventory slots"),
+					panelX + PANEL_WIDTH / 2,
+					panelY + 117,
+					0xFFFFAA00
+				);
+			}
 		}
 
 		super.extractRenderState(context, mouseX, mouseY, delta);
@@ -324,6 +430,16 @@ public class RecipePreviewScreen extends Screen {
 
 		ContextMap contextParams = SlotDisplayContext.fromLevel(minecraft.level);
 		RecipeDisplay display = recipe.display();
+
+		// Brewing before furnace, because a brewing entry carries a furnace display: the two are
+		// the same shape and the book's list rides that. Only here does the difference matter -
+		// the furnace draw shows the ingredient and drops the second slot as fuel, and in a brew
+		// that second slot is the reagent, which is the entire question being asked.
+		BrewingRecipeEntry brewing = RecipeCache.getBrewing(recipe.id());
+		if (brewing != null) {
+			drawBrewingRecipe(context, panelX, startY, mouseX, mouseY, brewing);
+			return;
+		}
 
 		// Handle furnace recipes separately
 		if (display instanceof FurnaceRecipeDisplay furnaceDisplay) {
@@ -439,6 +555,93 @@ public class RecipePreviewScreen extends Screen {
 		if (resultStack.getCount() > 1) {
 			context.itemDecorations(this.font, resultStack, resultX + 1, resultY + 1);
 		}
+	}
+
+	/** Slots drawn per ingredient row; vanilla brewing never needs more than the first. */
+	private static final int BREWING_OPTIONS_SHOWN = 4;
+
+	/**
+	 * Draw a brew: the bottle it starts from, the reagent that changes it, and what comes out.
+	 *
+	 * <p>Both inputs are drawn as rows because an ingredient is a set - no vanilla brewing recipe
+	 * has more than one option in either slot, but a data pack's may - and a row of one is just a
+	 * slot, so the simple case costs nothing to keep the general one honest.
+	 */
+	private void drawBrewingRecipe(GuiGraphicsExtractor context, int panelX, int startY,
+								   int mouseX, int mouseY, BrewingRecipeEntry brewing) {
+		List<ItemStack> inputs = brewing.inputs();
+		List<ItemStack> reagents = brewing.reagents();
+		if (inputs.isEmpty() || reagents.isEmpty()) return;
+
+		int inputCols = Math.min(inputs.size(), BREWING_OPTIONS_SHOWN);
+		int reagentCols = Math.min(reagents.size(), BREWING_OPTIONS_SHOWN);
+		int inputWidth = inputCols * (SLOT_SIZE + 2);
+		int reagentWidth = reagentCols * (SLOT_SIZE + 2);
+
+		int totalWidth = inputWidth + 14 + reagentWidth + 20 + SLOT_SIZE;
+		int x = panelX + (PANEL_WIDTH - totalWidth) / 2;
+		int y = startY + 10;
+		int centerY = y + SLOT_SIZE / 2;
+
+		x = drawBrewingRow(context, inputs, inputCols, x, y, mouseX, mouseY);
+
+		context.text(this.font, Component.literal("+"), x + 4, centerY - 4, 0xFFFFFFFF);
+		x += 14;
+
+		x = drawBrewingRow(context, reagents, reagentCols, x, y, mouseX, mouseY);
+
+		context.text(this.font, Component.literal("→"), x + 6, centerY - 4, 0xFFFFFFFF);
+		x += 20;
+
+		context.fill(x, y, x + SLOT_SIZE, y + SLOT_SIZE, 0xFF3A3A3A);
+		context.item(brewing.output(), x + 1, y + 1);
+		resultSlot = new SlotInfo(x, y, brewing.output());
+		if (mouseX >= x && mouseX < x + SLOT_SIZE && mouseY >= y && mouseY < y + SLOT_SIZE) {
+			hoveredSlot = resultSlot;
+		}
+
+		context.centeredText(this.font, Component.literal("Brewing stand"),
+			panelX + PANEL_WIDTH / 2, y + SLOT_SIZE + 8, 0xFF999999);
+	}
+
+	/** One row of interchangeable stacks; returns the x just past it. */
+	private int drawBrewingRow(GuiGraphicsExtractor context, List<ItemStack> options, int columns,
+							   int x, int y, int mouseX, int mouseY) {
+		for (int i = 0; i < columns; i++) {
+			ItemStack stack = options.get(i);
+			int slotX = x + i * (SLOT_SIZE + 2);
+
+			context.fill(slotX, y, slotX + SLOT_SIZE, y + SLOT_SIZE, 0xFF3A3A3A);
+			context.item(stack, slotX + 1, y + 1);
+
+			SlotInfo slotInfo = new SlotInfo(slotX, y, stack);
+			// Click-through to whatever brews this one, so a chain reads backwards a step at a
+			// time: strength to awkward to water bottle.
+			slotInfo.recipe = RecipeCache.findBrewingRecipeFor(stack);
+			ingredientSlots.add(slotInfo);
+
+			if (mouseX >= slotX && mouseX < slotX + SLOT_SIZE && mouseY >= y && mouseY < y + SLOT_SIZE) {
+				hoveredSlot = slotInfo;
+			}
+
+			// Held is asked of the real stacks: the item-keyed inventory map counts every potion
+			// as the same potion, and which one you are holding is the whole of the question.
+			if (!holdsBrewingStack(stack)) {
+				context.fill(slotX, y, slotX + SLOT_SIZE, y + SLOT_SIZE,
+					slotInfo.recipe != null ? 0x40FFAA00 : 0x40FF4444);
+			}
+		}
+		return x + columns * (SLOT_SIZE + 2);
+	}
+
+	private boolean holdsBrewingStack(ItemStack wanted) {
+		if (minecraft == null || minecraft.player == null) return false;
+		for (int slot = 0; slot < 36; slot++) {
+			if (ItemStack.isSameItemSameComponents(minecraft.player.getInventory().getItem(slot), wanted)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

@@ -58,7 +58,7 @@ public class ClientPlayNetworkHandlerMixin {
 	)
 	private void onRecipeBookAdd(ClientboundRecipeBookAddPacket packet, CallbackInfo ci) {
 		if (packet.replace()) {
-			RecipeCache.clear();
+			RecipeCache.resetUnlocked();
 		}
 
 		List<RecipeDisplayEntry> entries = new ArrayList<>();
@@ -71,7 +71,7 @@ public class ClientPlayNetworkHandlerMixin {
 		// Info-level on the initial full sync only: lets a player confirm from the
 		// log that the mod is installed and capturing recipes on this connection
 		if (packet.replace()) {
-			SmartRecipeBookMod.LOGGER.info("Recipe cache primed with {} recipes from server", RecipeCache.getRecipeCount());
+			SmartRecipeBookMod.LOGGER.info("Recipe cache primed with {} unlocked recipes from server", entries.size());
 		}
 	}
 

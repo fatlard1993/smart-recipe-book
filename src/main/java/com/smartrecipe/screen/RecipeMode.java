@@ -12,6 +12,13 @@ public enum RecipeMode {
 
 	SMOKER("Smoking"),
 
+	/**
+	 * The brewing stand. Alone among the modes, its recipes do not come from the vanilla recipe
+	 * sync - the game sends a client no brewing recipes at all - so this mode is empty unless the
+	 * server is running this mod's own half. See {@code BrewingRecipesPayload}.
+	 */
+	BREWING("Brewing"),
+
 	/** Somebody else's crafting bench, named by the recipe book category it works from. */
 	STATION("Station");
 

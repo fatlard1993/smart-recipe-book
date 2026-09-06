@@ -17,6 +17,8 @@ import net.minecraft.client.gui.screens.inventory.CraftingScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.context.ContextMap;
 import net.minecraft.world.item.Item;
+import com.smartrecipe.brewing.BrewingRecipeEntry;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.display.FurnaceRecipeDisplay;
@@ -40,6 +42,35 @@ public class SmartRecipeBookScreen extends Screen {
 	private static final int RECIPES_PER_PAGE = RECIPES_PER_ROW * ROWS_PER_PAGE;
 	private static final int SLOT_SIZE = 25;
 	private static final int SLOT_SPACING = 2;
+
+	/**
+	 * The book's own frame, and the spacing inside it.
+	 *
+	 * <p>Everything here used to be measured from the top of the window - a grid pinned at y=50
+	 * with the controls trailing under it - so the screen read as a handful of widgets floating on
+	 * a dimmed world rather than a thing with edges, and left a band of dead space below itself on
+	 * any tall window. The panel is sized from its contents and centred, so it is the same shape
+	 * at every resolution.
+	 */
+	private static final int PAD = 10;
+	private static final int ROW_GAP = 8;
+	private static final int CONTROL_H = 20;
+	/** The spacing is between slots, not after the last one, so one gap comes back off each. */
+	private static final int GRID_W = RECIPES_PER_ROW * (SLOT_SIZE + SLOT_SPACING) - SLOT_SPACING;
+	private static final int GRID_H = ROWS_PER_PAGE * (SLOT_SIZE + SLOT_SPACING) - SLOT_SPACING;
+	/** Wide enough for the longer of the two labels and the icon's gutter, and no wider. */
+	private static final int TOGGLE_W = 96;
+
+	private static final int PANEL_FILL = 0xF018181A;
+	private static final int PANEL_EDGE = 0xFF000000;
+	private static final int PANEL_LIGHT = 0xFF5A5A60;
+	private static final int PANEL_DARK = 0xFF3A3A3E;
+
+	// Laid out by layout(), which both init and rendering call: the two used to work the
+	// geometry out separately from the same numbers, which is a drift waiting to happen
+	private int panelX, panelY, panelW, panelH;
+	private int gridX, gridY, titleY, controlsY, footerY;
+	private int pagerX, pagerW;
 
 	private final Screen parent;
 	private final int craftingGridSize; // 2 for 2x2 inventory, 3 for 3x3 crafting table
@@ -124,6 +155,77 @@ public class SmartRecipeBookScreen extends Screen {
 		return 2;
 	}
 
+	/**
+	 * The on-screen box of every recipe slot on this page, as {x, y, w, h}.
+	 *
+	 * <p>The grid is drawn straight onto the screen rather than built out of widgets, which is
+	 * cheap and right for a few dozen icons but leaves it invisible to anything that reads
+	 * {@code Screen.children()} - a gamepad navigator included, which could reach the search box
+	 * and the pager and not one recipe. This is how the grid says where it is, without becoming
+	 * forty widgets to do it.
+	 *
+	 * <p>Only the slots actually filled on this page: a navigator that could land on the empty
+	 * tail of the last row would be stepping onto nothing.
+	 */
+	public List<int[]> recipeSlotBounds() {
+		layout();
+
+		List<int[]> bounds = new ArrayList<>();
+		int startIndex = currentPage * RECIPES_PER_PAGE;
+		int shown = Math.min(RECIPES_PER_PAGE, Math.max(0, displayedRecipes.size() - startIndex));
+
+		for (int i = 0; i < shown; i++) {
+			int row = i / RECIPES_PER_ROW;
+			int col = i % RECIPES_PER_ROW;
+			bounds.add(new int[] {
+				gridX + col * (SLOT_SIZE + SLOT_SPACING),
+				gridY + row * (SLOT_SIZE + SLOT_SPACING),
+				SLOT_SIZE, SLOT_SIZE
+			});
+		}
+		return bounds;
+	}
+
+	/** The frame: a dark panel bevelled the way a vanilla slot is, lit top-left. */
+	private void drawPanel(GuiGraphicsExtractor context) {
+		context.fill(panelX, panelY, panelX + panelW, panelY + panelH, PANEL_FILL);
+		context.fill(panelX, panelY, panelX + panelW, panelY + 1, PANEL_EDGE);
+		context.fill(panelX, panelY + panelH - 1, panelX + panelW, panelY + panelH, PANEL_EDGE);
+		context.fill(panelX, panelY, panelX + 1, panelY + panelH, PANEL_EDGE);
+		context.fill(panelX + panelW - 1, panelY, panelX + panelW, panelY + panelH, PANEL_EDGE);
+		context.fill(panelX + 1, panelY + 1, panelX + panelW - 1, panelY + 2, PANEL_LIGHT);
+		context.fill(panelX + 1, panelY + 1, panelX + 2, panelY + panelH - 1, PANEL_LIGHT);
+		context.fill(panelX + 1, panelY + panelH - 2, panelX + panelW - 1, panelY + panelH - 1, PANEL_DARK);
+		context.fill(panelX + panelW - 2, panelY + 1, panelX + panelW - 1, panelY + panelH - 1, PANEL_DARK);
+	}
+
+	/** Measured in init to centre the pager and drawn in render: one wording, one width. */
+	private String pageLabel() {
+		int totalPages = Math.max(1, (displayedRecipes.size() + RECIPES_PER_PAGE - 1) / RECIPES_PER_PAGE);
+		return "Page " + (currentPage + 1) + " / " + totalPages;
+	}
+
+	/** Where everything sits, from the contents outward. Cheap, and the single source of it. */
+	private void layout() {
+		panelW = GRID_W + PAD * 2;
+		panelH = PAD + this.font.lineHeight + ROW_GAP - 2 + CONTROL_H + ROW_GAP
+			+ GRID_H + ROW_GAP + CONTROL_H + PAD;
+		panelX = (this.width - panelW) / 2;
+		panelY = (this.height - panelH) / 2;
+
+		titleY = panelY + PAD;
+		controlsY = titleY + this.font.lineHeight + ROW_GAP - 2;
+		gridX = panelX + PAD;
+		gridY = controlsY + CONTROL_H + ROW_GAP;
+		footerY = gridY + GRID_H + ROW_GAP;
+
+		// Room for the widest page label this is likely to wear, not for the one it is wearing:
+		// sized to the live text, the arrows would step sideways the moment a page count gained
+		// a digit, and the label is drawn centred on the panel either way.
+		pagerW = CONTROL_H + ROW_GAP + this.font.width("Page 00 / 00") + ROW_GAP + CONTROL_H;
+		pagerX = panelX + (panelW - pagerW) / 2;
+	}
+
 	@Override
 	protected void init() {
 		super.init();
@@ -135,62 +237,59 @@ public class SmartRecipeBookScreen extends Screen {
 		// Clear craftability cache when re-initializing
 		craftabilityCache.clear();
 
-		int gridWidth = RECIPES_PER_ROW * (SLOT_SIZE + SLOT_SPACING);
-		int gridHeight = ROWS_PER_PAGE * (SLOT_SIZE + SLOT_SPACING);
-		int gridX = (this.width - gridWidth) / 2;
-		int gridY = 50;
+		layout();
 
+		// Search and the filter share the header's second row: a full-width box with the filter
+		// stranded two rows below it was most of the screen's wasted height.
+		int searchW = GRID_W - TOGGLE_W - ROW_GAP;
 		searchField = new EditBox(
 			this.font,
 			gridX,
-			25,
-			gridWidth,
-			18,
+			controlsY,
+			searchW,
+			CONTROL_H,
 			Component.literal("Search...")
 		);
 		searchField.setHint(Component.literal("Search recipes..."));
 		searchField.setResponder(this::onSearchChanged);
 		this.addRenderableWidget(searchField);
 
-		int navY = gridY + gridHeight + 10;
+		craftableToggle = Button.builder(
+			craftableToggleLabel(),
+			button -> toggleCraftableOnly()
+		).bounds(gridX + GRID_W - TOGGLE_W, controlsY, TOGGLE_W, CONTROL_H).build();
+		this.addRenderableWidget(craftableToggle);
 
+		// The pager is one control, so its parts stand together: the arrows used to be pinned to
+		// the far corners of the grid with the page number adrift in the middle of them.
 		prevPageButton = Button.builder(
 			Component.literal("<"),
 			button -> previousPage()
-		).bounds(gridX, navY, 30, 20).build();
+		).bounds(pagerX, footerY, CONTROL_H, CONTROL_H).build();
 		this.addRenderableWidget(prevPageButton);
 
 		nextPageButton = Button.builder(
 			Component.literal(">"),
 			button -> nextPage()
-		).bounds(gridX + gridWidth - 30, navY, 30, 20).build();
+		).bounds(pagerX + pagerW - CONTROL_H, footerY, CONTROL_H, CONTROL_H).build();
 		this.addRenderableWidget(nextPageButton);
 
-		// Its own row under the arrows. The space between them only looks free:
-		// the "Page n / m" label is drawn centred at navY + 5, so a button there
-		// sits on top of it.
-		int toggleWidth = 120;
-		craftableToggle = Button.builder(
-			craftableToggleLabel(),
-			button -> toggleCraftableOnly()
-		).bounds(gridX + (gridWidth - toggleWidth) / 2, navY + 24, toggleWidth, 20).build();
-		this.addRenderableWidget(craftableToggle);
-
-		// Close button (X) in top-right corner
 		Button closeButton = Button.builder(
 			Component.literal("X"),
 			button -> onClose()
-		).bounds(gridX + gridWidth - 20, 5, 20, 18).build();
+		).bounds(panelX + panelW - PAD - CONTROL_H, titleY - 5, CONTROL_H, CONTROL_H).build();
 		this.addRenderableWidget(closeButton);
+
+		// Typing is what this screen is for, so the caret is already in the box: the book opens
+		// on a list too long to read and the way through it is a word. Set last, after every
+		// widget is in, because that is what decides which one holds focus.
+		this.setInitialFocus(searchField);
 
 		// Apply filter - this filters to only show craftable recipes
 		applyFilters();
 	}
 
 	private void loadRecipes() {
-		// Ensure recipes are loaded (will load from integrated server in singleplayer)
-		RecipeCache.ensureLoaded();
-
 		switch (recipeMode) {
 			case FURNACE:
 				allRecipes = RecipeCache.getFurnaceRecipes();
@@ -204,6 +303,9 @@ public class SmartRecipeBookScreen extends Screen {
 			case STATION:
 				allRecipes = stationCategory == null
 					? java.util.List.of() : RecipeCache.getStationRecipes(stationCategory);
+				break;
+			case BREWING:
+				allRecipes = RecipeCache.getBrewingRecipes();
 				break;
 			default:
 				allRecipes = RecipeCache.getCraftingRecipes();
@@ -245,6 +347,7 @@ public class SmartRecipeBookScreen extends Screen {
 	 * it. Green button, green slots: the same green means the same thing in both
 	 * places, which is most of what makes it learnable without reading.
 	 */
+	/** The leading spaces are the icon's gutter: the item is drawn into them by the renderer. */
 	private Component craftableToggleLabel() {
 		return craftableOnly
 			? Component.literal("   Can make").withStyle(ChatFormatting.GREEN)
@@ -268,8 +371,8 @@ public class SmartRecipeBookScreen extends Screen {
 		ContextMap contextParams = SlotDisplayContext.fromLevel(minecraft.level);
 		updateInventory();
 
-		// Track seen items to deduplicate (show one recipe per result item)
-		Set<Item> seenItems = new HashSet<>();
+		// Track seen results to deduplicate (show one recipe per result)
+		Set<Object> seenItems = new HashSet<>();
 
 		for (RecipeDisplayEntry entry : allRecipes) {
 			// Check if recipe fits current crafting grid (only for crafting mode)
@@ -298,11 +401,12 @@ public class SmartRecipeBookScreen extends Screen {
 				continue;
 			}
 
-			// Skip if we already have a recipe for this item (deduplicate)
-			if (seenItems.contains(resultItem)) {
+			// Skip if we already have a recipe for this result (deduplicate)
+			Object resultKey = dedupeKey(resultStack);
+			if (seenItems.contains(resultKey)) {
 				continue;
 			}
-			seenItems.add(resultItem);
+			seenItems.add(resultKey);
 
 			displayedRecipes.add(entry);
 		}
@@ -351,6 +455,14 @@ public class SmartRecipeBookScreen extends Screen {
 			return cached;
 		}
 
+		// A brew is not a craft and has no recipe tree to walk: the calculator would look this id
+		// up among the server's recipes, not find it, and report every potion unmakeable.
+		if (recipeMode == RecipeMode.BREWING) {
+			boolean canBrew = canBrewRecipe(entry);
+			craftabilityCache.put(entry.id(), canBrew);
+			return canBrew;
+		}
+
 		// Use RecipeTreeCalculator to check if we can craft this recipe
 		// It already handles recursive dependency checking
 		if (minecraft == null) {
@@ -363,6 +475,45 @@ public class SmartRecipeBookScreen extends Screen {
 
 		craftabilityCache.put(entry.id(), canCraft);
 		return canCraft;
+	}
+
+	/**
+	 * What tells two results apart in the list.
+	 *
+	 * <p>The item alone everywhere but brewing, where it is not enough to tell anything apart:
+	 * every potion in the game is the same three items - potion, splash, lingering - and which
+	 * potion it is lives in a component. Keyed by item, the whole brewing list collapses to three
+	 * rows.
+	 */
+	private Object dedupeKey(ItemStack stack) {
+		if (recipeMode != RecipeMode.BREWING) return stack.getItem();
+		return java.util.List.of(stack.getItem(),
+			java.util.Optional.ofNullable(stack.get(DataComponents.POTION_CONTENTS)));
+	}
+
+	/** Whether the player is holding both halves of a brew: a bottle it starts from and a reagent. */
+	private boolean canBrewRecipe(RecipeDisplayEntry entry) {
+		BrewingRecipeEntry brew = RecipeCache.getBrewing(entry.id());
+		if (brew == null) return false;
+		return holdsAnyOf(brew.inputs()) && holdsAnyOf(brew.reagents());
+	}
+
+	/**
+	 * Read against the real stacks rather than the item-keyed inventory map the rest of the screen
+	 * uses. That map cannot answer this: it counts potions by the item, so it knows you hold four
+	 * potions and not one of which kind, and brewing turns entirely on which kind.
+	 */
+	private boolean holdsAnyOf(List<ItemStack> options) {
+		if (minecraft == null || minecraft.player == null) return false;
+
+		for (int slot = 0; slot < 36; slot++) {
+			ItemStack held = minecraft.player.getInventory().getItem(slot);
+			if (held.isEmpty()) continue;
+			for (ItemStack option : options) {
+				if (ItemStack.isSameItemSameComponents(held, option)) return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean canCraftRecipeDirect(RecipeDisplayEntry entry, ContextMap contextParams) {
@@ -420,29 +571,24 @@ public class SmartRecipeBookScreen extends Screen {
 	public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
 		context.fill(0, 0, this.width, this.height, 0xC0101010);
 
+		layout();
+		drawPanel(context);
+
 		super.extractRenderState(context, mouseX, mouseY, delta);
 
 		if (minecraft == null || minecraft.level == null) return;
 
 		ContextMap contextParams = SlotDisplayContext.fromLevel(minecraft.level);
 
-		int gridWidth = RECIPES_PER_ROW * (SLOT_SIZE + SLOT_SPACING);
-		int gridX = (this.width - gridWidth) / 2;
-		int gridY = 50;
-
-		String modeLabel;
-		if (recipeMode.isFurnaceType()) {
-			modeLabel = recipeMode.getDisplayName();
-		} else {
-			modeLabel = craftingGridSize == 3 ? "3x3 Crafting Table" : "2x2 Inventory";
-		}
-		context.centeredText(
-			this.font,
-			Component.literal("Recipes - " + modeLabel + " (" + displayedRecipes.size() + ")"),
-			this.width / 2,
-			8,
-			0xFFFFFFFF
-		);
+		// Name first and hard, the qualifiers after it and quiet: the heading used to be one
+		// long line of equal weight centred over a screen whose every other edge is flush left.
+		context.text(this.font, Component.literal("Recipes"), gridX, titleY, 0xFFFFFFFF, false);
+		String modeLabel = recipeMode.isFurnaceType()
+			? recipeMode.getDisplayName()
+			: (craftingGridSize == 3 ? "3x3 Crafting Table" : "2x2 Inventory");
+		context.text(this.font,
+			Component.literal(modeLabel + "  -  " + displayedRecipes.size()),
+			gridX + this.font.width("Recipes") + 8, titleY, 0xFF8C8C92, false);
 
 		// An item over the toggle, so the button says what it does with a picture as
 		// well as a word. A crafting table for "only what I can make", a book for
@@ -452,13 +598,12 @@ public class SmartRecipeBookScreen extends Screen {
 			context.item(toggleIcon, craftableToggle.getX() + 4, craftableToggle.getY() + 2);
 		}
 
-		int totalPages = Math.max(1, (displayedRecipes.size() + RECIPES_PER_PAGE - 1) / RECIPES_PER_PAGE);
 		context.centeredText(
 			this.font,
-			Component.literal("Page " + (currentPage + 1) + " / " + totalPages),
-			this.width / 2,
-			gridY + ROWS_PER_PAGE * (SLOT_SIZE + SLOT_SPACING) + 15,
-			0xFFAAAAAA
+			Component.literal(pageLabel()),
+			panelX + panelW / 2,
+			footerY + (CONTROL_H - this.font.lineHeight) / 2 + 1,
+			0xFFBEBEC4
 		);
 
 		hoveredRecipe = null;

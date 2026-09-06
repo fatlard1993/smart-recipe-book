@@ -7,9 +7,11 @@
     "defaultRequire": 1
   },
   "mixins": [
+    "PlaceUnknownRecipeMixin",
     "ServerRecipeManagerAccessor"
   ],
   "client": [
+    "BrewingStandBookMixin",
     "ClientPlayNetworkHandlerMixin",
     "PandoricalStationBookMixin",
     "RecipeBookWidgetMixin",

@@ -4,7 +4,7 @@ import com.smartrecipe.crafting.AutoCraftExecutor;
 import com.smartrecipe.recipe.RecipeCache;
 import com.smartrecipe.recipe.RecipeTreeCalculator;
 import com.smartrecipe.screen.RecipeMode;
-import com.smartrecipe.screen.SmartRecipeBookScreen;
+import com.smartrecipe.screen.RecipeBookScreens;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractFurnaceScreen;
@@ -89,7 +89,7 @@ public abstract class RecipeBookWidgetMixin {
 		if (isVisible()) setVisible(false);
 
 		ci.cancel();
-		minecraft.gui.setScreen(new SmartRecipeBookScreen(current, mode));
+		minecraft.gui.setScreen(RecipeBookScreens.open(current, mode));
 	}
 
 	/**

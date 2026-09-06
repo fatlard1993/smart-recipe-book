@@ -10,8 +10,9 @@
 	},
 	"license": "MIT",
 	"icon": "assets/smart-recipe-book/icon.png",
-	"environment": "client",
+	"environment": "*",
 	"entrypoints": {
+		"main": ["com.smartrecipe.server.BrewingRecipeSender", "com.smartrecipe.server.RecipeCatalogSender"],
 		"client": ["com.smartrecipe.SmartRecipeBookMod"]
 	},
 	"mixins": ["smart-recipe-book.mixins.json"],

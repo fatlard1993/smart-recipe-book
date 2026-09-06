@@ -3,6 +3,9 @@ package com.smartrecipe.crafting;
 import com.smartrecipe.SmartRecipeBookMod;
 import com.smartrecipe.recipe.CraftCountTracker;
 import com.smartrecipe.recipe.CraftingPlan;
+import com.smartrecipe.recipe.RecipeTreeCalculator;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
@@ -10,6 +13,7 @@ import net.minecraft.network.HashedStack;
 import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 
@@ -31,10 +35,15 @@ public class AutoCraftExecutor {
 	private static Minecraft currentClient = null;
 	private static int ticksUntilNextStep = 0;
 
-	// Fallback timeout if inventory update never arrives.
-	// 3 ticks (~150ms) is enough for LAN/singleplayer; on laggy servers
-	// the inventory update hook will fire first and skip the wait.
-	private static final int TICK_TIMEOUT = 3;
+	// Fallback if the step's result never shows up in the inventory: a second, and then the
+	// next step goes regardless. A step normally advances the moment its result has landed
+	// and the grid is clear again, which is well inside this.
+	private static final int TICK_TIMEOUT = 20;
+
+	/** The step in flight: what it makes, and how many of that the inventory held before. */
+	private static Item expectedItem = null;
+	private static int expectedCount = 0;
+	private static int countBefore = 0;
 
 	// Set true when we receive an inventory update during execution,
 	// allowing the next step to fire immediately on the next tick.
@@ -57,18 +66,35 @@ public class AutoCraftExecutor {
 
 		if (client.player == null) return;
 
+		// Refused rather than warned, because the failure is destructive. A shift-click into a full
+		// inventory moves nothing, so an intermediate stays in the grid until the next step lays
+		// its own recipe over it and the crafted item is gone - materials spent for nothing, with
+		// no message. Better to decline the whole plan and say why while everything is still safe
+		// in the player's hands.
+		int shortfall = RecipeTreeCalculator.slotsNeededFor(plan)
+			- RecipeTreeCalculator.freeInventorySlots(client.player);
+		if (shortfall > 0) {
+			client.player.sendSystemMessage(Component.literal(shortfall == 1
+					? "Not enough room to craft that: free up 1 inventory slot"
+					: "Not enough room to craft that: free up " + shortfall + " inventory slots")
+				.withStyle(ChatFormatting.RED));
+			return;
+		}
+
 		currentClient = client;
 		initialSyncId = client.player.containerMenu.containerId;
 
-		List<CraftingPlan.CraftingStep> originalSteps = plan.getSteps();
-		steps = new ArrayList<>();
-		for (int i = 0; i < quantity; i++) {
-			steps.addAll(originalSteps);
-		}
+		// Planned for the whole quantity against one running inventory, so a sub-craft whose
+		// spares cover the next craft is not repeated for it. Repeating the one-craft plan spent
+		// materials the estimate never counted, and a run for "max" fell short of its own plan.
+		CraftingPlan sized = quantity > 1
+			? RecipeTreeCalculator.calculatePlan(client, plan.getTargetRecipe(), quantity) : plan;
+		if (sized == null || !sized.canCraft()) sized = plan;
+		steps = new ArrayList<>(sized.getSteps());
 		currentStepIndex = 0;
 
-		SmartRecipeBookMod.LOGGER.debug("Starting crafting plan: {} steps x {} = {} total",
-			originalSteps.size(), quantity, steps.size());
+		SmartRecipeBookMod.LOGGER.debug("Starting crafting plan: {} steps for {} craft(s)",
+			steps.size(), quantity);
 
 		isExecuting = true;
 		inventoryUpdated = false;
@@ -106,6 +132,10 @@ public class AutoCraftExecutor {
 		SmartRecipeBookMod.LOGGER.debug("Step {}/{}: {}",
 			currentStepIndex + 1, steps.size(), step.getRecipeId());
 
+		expectedItem = step.getResult().getItem();
+		expectedCount = step.getResult().getCount();
+		countBefore = countInInventory(expectedItem);
+
 		CraftPacketSender.sendCraftRequest(step.getRecipeId(), false);
 		clickCraftingResult();
 
@@ -127,6 +157,32 @@ public class AutoCraftExecutor {
 	 * Credit the craft count for the pending step once we have
 	 * confirmation (inventory update or timeout).
 	 */
+	/** Whether the step in flight has finished: its result in the inventory, the grid empty. */
+	private static boolean settled(Minecraft client) {
+		if (client.player == null || expectedItem == null) return true;
+		if (countInInventory(expectedItem) < countBefore + expectedCount) return false;
+		AbstractContainerMenu handler = client.player.containerMenu;
+		int grid = handler instanceof net.minecraft.world.inventory.AbstractCraftingMenu crafting
+			? crafting.getGridWidth() * crafting.getGridHeight() : 4;
+		for (int slot = 1; slot <= grid && slot < handler.slots.size(); slot++) {
+			if (!handler.getSlot(slot).getItem().isEmpty()) return false;
+		}
+		return true;
+	}
+
+	private static int countInInventory(Item item) {
+		if (currentClient == null || currentClient.player == null) return 0;
+		int count = 0;
+		var inventory = currentClient.player.getInventory();
+		for (int slot = 0; slot < 36; slot++) {
+			ItemStack stack = inventory.getItem(slot);
+			if (stack.getItem() == item) count += stack.getCount();
+		}
+		ItemStack offhand = inventory.getItem(40);
+		if (offhand.getItem() == item) count += offhand.getCount();
+		return count;
+	}
+
 	private static void confirmPendingStep() {
 		if (pendingStep == null) return;
 
@@ -172,11 +228,16 @@ public class AutoCraftExecutor {
 	public static void onClientTick(Minecraft client) {
 		if (!isExecuting) return;
 
+		// An update is a sign, not a settlement: the first one after a step is often the grid
+		// being filled, before the result has been taken. Go on only once the result has
+		// landed and the grid is clear, or when the wait runs out.
 		if (inventoryUpdated) {
 			inventoryUpdated = false;
-			ticksUntilNextStep = 0;
-			executeCurrentStep();
-			return;
+			if (pendingStep == null || settled(client)) {
+				ticksUntilNextStep = 0;
+				executeCurrentStep();
+				return;
+			}
 		}
 
 		if (ticksUntilNextStep > 0) {
