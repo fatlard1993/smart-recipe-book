@@ -75,7 +75,11 @@ public class RecipeTreeCalculator {
 
 		boolean success = true;
 		for (int made = 0; made < Math.max(1, quantity); made++) {
+			// The thing being made is on the stack from the start. A take-apart recipe (a TNT
+			// minecart back into TNT) otherwise plans a loop: make the TNT, build the cart with
+			// it, take the cart apart for the TNT it started with.
 			Set<Item> visited = new HashSet<>();
+			visited.add(resultStack.getItem());
 			List<CraftingPlan.CraftingStep> steps = new ArrayList<>();
 			if (!calculateDependencies(client, entry, inventory, visited, steps, contextParams, 0)) {
 				success = false;
@@ -131,6 +135,11 @@ public class RecipeTreeCalculator {
 				if (possible.isEmpty()) continue;
 
 				Item neededItem = possible.getItem();
+				// Below the root, an item this plan is already making is never taken off the
+				// stack: with TNT in hand, a TNT minecart built from it and taken apart again
+				// planned as a way of making TNT, and made none. The root recipe itself may
+				// still spend its own result (cloning a map costs a map and returns two).
+				if (depth > 0 && visited.contains(neededItem)) continue;
 				int haveCount = inventory.getOrDefault(neededItem, 0);
 
 				if (haveCount >= 1) {
@@ -193,6 +202,11 @@ public class RecipeTreeCalculator {
 	 * old preference for the shallow answer without letting it be the only answer. The cache is
 	 * the list, not the choice: the list does not depend on what the player is carrying, so it
 	 * cannot go stale the way the choice did.
+	 *
+	 * <p>Workbench recipes only. A sub-craft is carried out in the grid the plan runs in, and a
+	 * station recipe that borrows the crafting display - fletch-craft's plank to three sticks
+	 * at the fletching table - looked like the cheapest way to sticks, was chosen for every
+	 * fence, and could not be placed in a crafting table: the plan stalled on its first step.
 	 */
 	private static List<RecipeDisplayEntry> findRecipesForItem(
 			Item item, ContextMap contextParams, Map<Item, Integer> inventory) {
@@ -201,12 +215,8 @@ public class RecipeTreeCalculator {
 		List<RecipeDisplayEntry> candidates = recipesForItemCache.get(item);
 		if (candidates == null) {
 			candidates = new ArrayList<>();
-			for (var entry : RecipeCache.getAllRecipes()) {
+			for (var entry : RecipeCache.getCraftingRecipes()) {
 				RecipeDisplay display = entry.display();
-				if (!(display instanceof ShapedCraftingRecipeDisplay)
-					&& !(display instanceof ShapelessCraftingRecipeDisplay)) {
-					continue;
-				}
 				if (getResultItem(display, contextParams).getItem() == item) {
 					candidates.add(entry);
 				}
@@ -380,8 +390,10 @@ public class RecipeTreeCalculator {
 		Map<Item, Integer> inventory = getInventoryContents(client.player);
 		ContextMap contextParams = SlotDisplayContext.fromLevel(client.level);
 
+		Item result = getResultItem(display, contextParams).getItem();
 		for (int i = 0; i < quantity; i++) {
 			Set<Item> visited = new HashSet<>();
+			visited.add(result);
 			if (!canCraftOnce(client, entry, inventory, visited, contextParams, 0)) {
 				return false;
 			}
@@ -416,6 +428,11 @@ public class RecipeTreeCalculator {
 				if (possible.isEmpty()) continue;
 
 				Item neededItem = possible.getItem();
+				// Below the root, an item this plan is already making is never taken off the
+				// stack: with TNT in hand, a TNT minecart built from it and taken apart again
+				// planned as a way of making TNT, and made none. The root recipe itself may
+				// still spend its own result (cloning a map costs a map and returns two).
+				if (depth > 0 && visited.contains(neededItem)) continue;
 				int haveCount = inventory.getOrDefault(neededItem, 0);
 
 				if (haveCount >= 1) {

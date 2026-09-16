@@ -37,6 +37,8 @@ public class RecipePreviewScreen extends Screen {
 	private final ItemStack resultStack;
 	private final Map<Item, Integer> playerInventory;
 	private final int craftingGridSize; // 2 for inventory, 3 for crafting table
+	/** The grid size this screen was opened for, before a furnace recipe narrows it: what a sibling recipe is opened with. */
+	private final int gridSizeAsked;
 	private final boolean isFurnaceRecipe;
 
 	private CraftingPlan craftingPlan;
@@ -116,10 +118,24 @@ public class RecipePreviewScreen extends Screen {
 	private int maxVisibleIngredientRows = 3;
 	private int totalIngredientRows = 0;
 
+	/**
+	 * Every recipe that makes this result, and which one is on show. Craft enacts the one on show;
+	 * the arrows by the title step through the rest. One entry for nearly everything.
+	 */
+	private final List<RecipeDisplayEntry> choices;
+	private final int choice;
+
 	public RecipePreviewScreen(Screen parent, RecipeDisplayEntry recipe, int craftingGridSize) {
+		this(parent, List.of(recipe), 0, craftingGridSize);
+	}
+
+	public RecipePreviewScreen(Screen parent, List<RecipeDisplayEntry> choices, int choice, int craftingGridSize) {
 		super(Component.literal("Recipe Preview"));
 		this.parent = parent;
-		this.recipe = recipe;
+		this.choices = List.copyOf(choices);
+		this.choice = Math.floorMod(choice, this.choices.size());
+		this.recipe = this.choices.get(this.choice);
+		this.gridSizeAsked = craftingGridSize;
 
 		// True for a brew as well, and meant to be: a brewing entry carries a furnace display, and
 		// what this flag actually decides is the layout - no quantity row, and a Close button where
@@ -158,6 +174,13 @@ public class RecipePreviewScreen extends Screen {
 		int panelY = (this.height - PANEL_HEIGHT) / 2;
 
 		int quantityY = panelY + PANEL_HEIGHT - 60;
+
+		if (choices.size() > 1) {
+			this.addRenderableWidget(Button.builder(Component.literal("◀"), b -> showChoice(choice - 1))
+				.bounds(panelX + 6, panelY + 5, 16, 14).build());
+			this.addRenderableWidget(Button.builder(Component.literal("▶"), b -> showChoice(choice + 1))
+				.bounds(panelX + PANEL_WIDTH - 22, panelY + 5, 16, 14).build());
+		}
 
 		if (!isFurnaceRecipe) {
 			// One row, symmetric about the panel's middle: the coarse steppers outside the fine
@@ -337,6 +360,11 @@ public class RecipePreviewScreen extends Screen {
 		craftQuantity = Math.max(1, Math.min(maxCraftable, craftQuantity));
 	}
 
+	private void showChoice(int index) {
+		if (minecraft == null) return;
+		minecraft.gui.setScreen(new RecipePreviewScreen(parent, choices, index, gridSizeAsked));
+	}
+
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
 		context.fill(0, 0, this.width, this.height, 0xC0101010);
@@ -352,9 +380,14 @@ public class RecipePreviewScreen extends Screen {
 		context.fill(panelX, panelY, panelX + 2, panelY + PANEL_HEIGHT, borderColor);
 		context.fill(panelX + PANEL_WIDTH - 2, panelY, panelX + PANEL_WIDTH, panelY + PANEL_HEIGHT, borderColor);
 
+		Component title = choices.size() > 1
+			? Component.empty().append(resultStack.getHoverName())
+				.append(Component.literal("  (" + (choice + 1) + " of " + choices.size() + ")")
+					.withStyle(ChatFormatting.GRAY))
+			: resultStack.getHoverName();
 		context.centeredText(
 			this.font,
-			resultStack.getHoverName(),
+			title,
 			panelX + PANEL_WIDTH / 2,
 			panelY + 8,
 			0xFFFFFFFF
@@ -411,9 +444,9 @@ public class RecipePreviewScreen extends Screen {
 
 			if (hoveredSlot.recipe != null) {
 				if (isFurnaceRecipe) {
-					tooltip.add(Component.literal("[Click to see how to smelt this]").withStyle(ChatFormatting.AQUA));
+					tooltip.add(Component.translatableWithFallback("smart-recipe-book.hint.smelt", "[Click to see how to smelt this]").withStyle(ChatFormatting.AQUA));
 				} else {
-					tooltip.add(Component.literal("[Click to view recipe]").withStyle(ChatFormatting.AQUA));
+					tooltip.add(Component.translatableWithFallback("smart-recipe-book.hint.recipe", "[Click to view recipe]").withStyle(ChatFormatting.AQUA));
 				}
 			}
 
@@ -701,11 +734,11 @@ public class RecipePreviewScreen extends Screen {
 		boolean canScrollDown = ingredientScrollOffset < maxScrollOffset;
 
 		if (canScrollUp) {
-			context.centeredText(this.font, Component.literal("▲ scroll"),
+			context.centeredText(this.font, Component.translatableWithFallback("smart-recipe-book.hint.scroll_up", "▲ scroll"),
 				startX + ingredientGridWidth / 2, baseY - 12, 0xFFAAAA00);
 		}
 		if (canScrollDown) {
-			context.centeredText(this.font, Component.literal("▼ scroll"),
+			context.centeredText(this.font, Component.translatableWithFallback("smart-recipe-book.hint.scroll_down", "▼ scroll"),
 				startX + ingredientGridWidth / 2, baseY + ingredientGridHeight + 2, 0xFFAAAA00);
 		}
 

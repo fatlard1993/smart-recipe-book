@@ -1,0 +1,10 @@
+{
+  "smart-recipe-book.hint.smelt": "[Click to see how to smelt this]",
+  "smart-recipe-book.hint.smelt.controller": "[Press [confirm] to see how to smelt this]",
+  "smart-recipe-book.hint.recipe": "[Click to view recipe]",
+  "smart-recipe-book.hint.recipe.controller": "[Press [confirm] to view recipe]",
+  "smart-recipe-book.hint.scroll_up": "\u25b2 scroll",
+  "smart-recipe-book.hint.scroll_up.controller": "\u25b2 [scroll_up]",
+  "smart-recipe-book.hint.scroll_down": "\u25bc scroll",
+  "smart-recipe-book.hint.scroll_down.controller": "\u25bc [scroll_down]"
+}

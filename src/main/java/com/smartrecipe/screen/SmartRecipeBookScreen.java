@@ -77,6 +77,14 @@ public class SmartRecipeBookScreen extends Screen {
 	private final RecipeMode recipeMode; // CRAFTING or FURNACE
 	private int currentPage = 0;
 	private List<RecipeDisplayEntry> displayedRecipes = new ArrayList<>();
+	/**
+	 * Every recipe for each result the list shows, in catalogue order.
+	 *
+	 * <p>The list shows one tile per result, and used to keep only the first recipe it met for it.
+	 * TNT is two recipes once a TNT minecart can be taken apart, and the book chose between them
+	 * on the player's behalf; the preview now offers the choice.
+	 */
+	private final Map<Object, List<RecipeDisplayEntry>> recipesByResult = new HashMap<>();
 	private List<RecipeDisplayEntry> allRecipes = new ArrayList<>();
 	private String searchQuery = "";
 	private Map<Item, Integer> playerInventory = new HashMap<>();
@@ -373,6 +381,7 @@ public class SmartRecipeBookScreen extends Screen {
 
 		// Track seen results to deduplicate (show one recipe per result)
 		Set<Object> seenItems = new HashSet<>();
+		recipesByResult.clear();
 
 		for (RecipeDisplayEntry entry : allRecipes) {
 			// Check if recipe fits current crafting grid (only for crafting mode)
@@ -403,6 +412,7 @@ public class SmartRecipeBookScreen extends Screen {
 
 			// Skip if we already have a recipe for this result (deduplicate)
 			Object resultKey = dedupeKey(resultStack);
+			recipesByResult.computeIfAbsent(resultKey, k -> new ArrayList<>()).add(entry);
 			if (seenItems.contains(resultKey)) {
 				continue;
 			}
@@ -721,8 +731,25 @@ public class SmartRecipeBookScreen extends Screen {
 	}
 
 	private void openRecipePreview(RecipeDisplayEntry entry) {
-		if (minecraft == null) return;
-		minecraft.gui.setScreen(new RecipePreviewScreen(this, entry, craftingGridSize));
+		if (minecraft == null || minecraft.level == null) return;
+
+		ContextMap contextParams = SlotDisplayContext.fromLevel(minecraft.level);
+		List<ItemStack> results = entry.resultItems(contextParams);
+		List<RecipeDisplayEntry> choices = results.isEmpty() ? List.of(entry)
+			: recipesByResult.getOrDefault(dedupeKey(results.get(0)), List.of(entry));
+
+		// Open on one that can be made now, so the ordinary case is still a single click: the tile's
+		// own recipe when it can, else the first that can, else the tile's.
+		int start = Math.max(0, choices.indexOf(entry));
+		if (choices.size() > 1 && !canCraftRecipeRecursive(choices.get(start), contextParams)) {
+			for (int i = 0; i < choices.size(); i++) {
+				if (canCraftRecipeRecursive(choices.get(i), contextParams)) {
+					start = i;
+					break;
+				}
+			}
+		}
+		minecraft.gui.setScreen(new RecipePreviewScreen(this, choices, start, craftingGridSize));
 	}
 
 	@Override

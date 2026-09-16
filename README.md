@@ -40,7 +40,7 @@ Install it on your client. In singleplayer, it shows all recipes regardless of u
 - **Craftable-only toggle** - Craftable-only is the default; the button under the page arrows switches to the full list. Craftability counts sub-crafting, and the choice sticks until you change it.
 - **Usage tracking** - Recipes you craft frequently appear first (resets each session).
 - **Search** - Type to filter recipes by name in real time.
-- **Deduplication** - One recipe per result item, keeping the list clean.
+- **Deduplication** - One recipe per result item, keeping the list clean. When more than one recipe makes it, the preview says so ("TNT (1 of 2)") and arrows by the title step through them; it opens on one you can make now, and Craft makes it the way that is on show.
 
 ### One-Click Complex Crafting
 
@@ -49,6 +49,8 @@ Want to craft a lantern but only have iron ingots, logs, and coal? The mod figur
 - Calculates the full crafting tree automatically
 - Identifies what intermediate items you need to make
 - Executes each crafting step in sequence
+- Sub-crafts use crafting-table recipes only, and a sub-craft never spends the item the plan is making
+- Warns when the plan needs more free inventory slots than you have
 - Choose how many to craft with the quantity selector: `-` / `+` step one at a time, `--` / `++` two at a time, and **Max** goes straight to as many as your materials allow
 
 ### Furnace Support
@@ -61,12 +63,20 @@ Works with all furnace types, showing only relevant recipes:
 
 For smelting recipes with multiple valid inputs (like Gold Ingot from ore, raw gold, or deepslate ore), the preview shows all options.
 
+### Brewing Stand
+
+With the mod on the server too, the brewing stand gets a book button, and the book lists the brews the server has: what goes in and what comes out. It is for looking up, not filling; the stand is loaded by hand. On a server without the mod there are no brewing recipes to show, so there is no button.
+
+### Modded Crafting Stations
+
+Any Pandorical station screen that declares a recipe book category (fletch-craft's fletching table, for one) gets the book button too, filtered to that category. Craft asks the station to lay the recipe out in its own grid; there is no sub-crafting there.
+
 ### Recipe Preview
 
 Click any recipe to see:
 
 - All required ingredients with quantities
-- Color-coded availability (green = have it, yellow = can sub-craft, red = missing)
+- Color-coded availability (no tint = you have it, yellow = you don't but it has a recipe, red = you don't and nothing makes it)
 - Click ingredients to jump to their recipes
 - Scroll through recipes with many input options
 
