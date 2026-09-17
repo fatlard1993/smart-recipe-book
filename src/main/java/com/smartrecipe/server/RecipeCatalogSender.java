@@ -3,7 +3,9 @@ package com.smartrecipe.server;
 import com.smartrecipe.SmartRecipeBookMod;
 import com.smartrecipe.mixin.ServerRecipeManagerAccessor;
 import com.smartrecipe.recipe.RecipeCatalogPayload;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -11,6 +13,9 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.advancements.AdvancementHolder;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
 
@@ -53,6 +58,24 @@ public class RecipeCatalogSender implements ModInitializer {
 		});
 	}
 
+	/**
+	 * Every recipe some advancement hands out, which is the game's own definition of one a player
+	 * can be taught.
+	 *
+	 * <p>The catalog is "everything you could learn", not "everything that exists". A recipe that
+	 * nothing teaches is one a mod has deliberately kept out of the book - hemp-craft has a few -
+	 * and putting it in front of every player with this mod installed would undo that from the
+	 * outside. A recipe granted by code rather than by advancement still appears once the player
+	 * has it, because the send also keeps whatever their own book already knows.
+	 */
+	private static Set<ResourceKey<Recipe<?>>> teachable(MinecraftServer server) {
+		Set<ResourceKey<Recipe<?>>> keys = new HashSet<>();
+		for (AdvancementHolder holder : server.getAdvancements().getAllAdvancements()) {
+			keys.addAll(holder.value().rewards().recipes());
+		}
+		return keys;
+	}
+
 	private static void send(MinecraftServer server, ServerPlayer player) {
 		String who = player.getName().getString();
 
@@ -64,8 +87,11 @@ public class RecipeCatalogSender implements ModInitializer {
 			return;
 		}
 
+		Set<ResourceKey<Recipe<?>>> teachable = teachable(server);
 		List<RecipeDisplayEntry> entries = ((ServerRecipeManagerAccessor) server.getRecipeManager())
 			.getRecipes().stream()
+			.filter(info -> teachable.contains(info.parent().id())
+				|| player.getRecipeBook().contains(info.parent().id()))
 			.map(RecipeManager.ServerDisplayInfo::display)
 			.toList();
 		if (entries.isEmpty()) {
