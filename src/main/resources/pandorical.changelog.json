@@ -1,0 +1,16 @@
+{
+	"overview": [
+		"Replaces the game's recipe book with one that searches properly and crafts the intermediate parts for you, so a thing you want is a click rather than a dig through lists."
+	],
+	"versions": {
+		"1.2.3": [
+			"Where one result has more than one recipe, arrows by the title step through them and the book opens on one you can make now, so the ordinary case is still a single click. A plan no longer spends what it is making, and the catalog carries only what a player could actually learn, so a recipe a mod deliberately keeps out stays out."
+		],
+		"1.2.0": [
+			"The whole catalog rather than only what you have unlocked, plans that know how many you asked for, and a recipe you click is one the server teaches you on the spot."
+		],
+		"1.1.0": [
+			"The replacement book: craftable shown in colour and picture rather than in a tooltip you have to read, a craftable-only toggle under the page arrows and on by default, another station's recipes kept out of the workbench's list, and the book opens at somebody else's bench too."
+		]
+	}
+}
