@@ -7,13 +7,21 @@
       "Rebuilt against Pandorical 15."
     ],
     "1.2.3": [
-      "Where one result has more than one recipe, arrows by the title step through them and the book opens on one you can make now, so the ordinary case is still a single click. A plan no longer spends what it is making, and the catalog carries only what a player could actually learn, so a recipe a mod deliberately keeps out stays out."
+      "Where one result has several recipes, arrows by the title step through them.",
+      "The book opens on a recipe you can make now.",
+      "A plan no longer spends what it is making.",
+      "The catalog leaves out recipes a mod deliberately hides."
     ],
     "1.2.0": [
-      "The whole catalog rather than only what you have unlocked, plans that know how many you asked for, and a recipe you click is one the server teaches you on the spot."
+      "The whole catalog, not only what you have unlocked.",
+      "Plans know how many you asked for.",
+      "A recipe you click is one the server teaches you on the spot."
     ],
     "1.1.0": [
-      "The replacement book: craftable shown in colour and picture rather than in a tooltip you have to read, a craftable-only toggle under the page arrows and on by default, another station's recipes kept out of the workbench's list, and the book opens at somebody else's bench too."
+      "The replacement book: craftable shown in colour and picture, not in a tooltip.",
+      "A craftable-only toggle under the page arrows, on by default.",
+      "Another station's recipes stay out of the workbench's list.",
+      "The book opens at somebody else's bench too."
     ]
   }
 }
