@@ -13,6 +13,7 @@
       "The catalog leaves out recipes a mod deliberately hides."
     ],
     "1.2.0": [
+      "The brewing stand gets a book too, listing what the server can brew: what goes in and what comes out. For looking up, not for filling.",
       "The whole catalog, not only what you have unlocked.",
       "Plans know how many you asked for.",
       "A recipe you click is one the server teaches you on the spot."
