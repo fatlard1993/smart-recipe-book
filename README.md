@@ -4,23 +4,13 @@ A Fabric mod that completely replaces Minecraft's recipe book with a smarter, mo
 
 ## A recipe you click is a recipe you know
 
-The game lays a recipe out only for a player whose recipe book already contains it, and a recipe
-gets into the book through an unlock advancement that a mod may never have written. The book
-would show such a recipe, because the catalog carries every recipe the server has, and clicking it
-did nothing at all. Now the click teaches it: with the ingredients in hand and the recipe asked for
-by name, the server awards it and lays it out in the same motion.
+The game lays a recipe out only for a player whose recipe book already contains it, and a recipe gets into the book through an unlock advancement that a mod may never have written. The book would show such a recipe, because the catalog carries every recipe the server has, and clicking it did nothing at all. Now the click teaches it: with the ingredients in hand and the recipe asked for by name, the server awards it and lays it out in the same motion.
 
 ## On a gamepad
 
-The recipe grid is painted rather than built out of widgets, which is right for a few dozen icons
-and leaves it invisible to anything reading `Screen.children()` - a gamepad navigator would reach
-the search box, the filter and the pager, and not one recipe.
+The recipe grid is painted rather than built out of widgets, which is right for a few dozen icons and leaves it invisible to anything reading `Screen.children()` - a gamepad navigator would reach the search box, the filter and the pager, and not one recipe.
 
-So the screen advertises its slots through Pandorical's `NavigableScreen`, the same channel
-Pandorical's own screens use, and couch-controls picks them up knowing nothing about this mod.
-Only the slots actually filled on the page are offered; landing on the empty tail of the last row
-is landing on nothing. Pandorical stays a suggestion rather than a requirement: the class that
-names it is separate, and a client without it never constructs that one.
+So the screen advertises its slots through Pandorical's `NavigableScreen`, the same channel Pandorical's own screens use, and couch-controls picks them up knowing nothing about this mod. Only the slots actually filled on the page are offered; landing on the empty tail of the last row is landing on nothing. Pandorical stays a suggestion rather than a requirement: the class that names it is separate, and a client without it never constructs that one.
 
 ## What It Does
 
