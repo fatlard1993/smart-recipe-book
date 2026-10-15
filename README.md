@@ -1,78 +1,69 @@
 # Smart Recipe Book
 
-A Fabric mod that completely replaces Minecraft's recipe book with a smarter, more useful alternative. No more digging through cluttered recipe lists or manually crafting intermediate materials.
+A Fabric mod that replaces the vanilla recipe book with one that shows what you can make from what you are carrying, and crafts the intermediate items for you.
 
-## A recipe you click is a recipe you know
+## Installing
 
-The game lays a recipe out only for a player whose recipe book already contains it, and a recipe gets into the book through an unlock advancement that a mod may never have written. The book would show such a recipe, because the catalog carries every recipe the server has, and clicking it did nothing at all. Now the click teaches it: with the ingredients in hand and the recipe asked for by name, the server awards it and lays it out in the same motion.
+The book is a client mod: install it on your client. The server half is optional and comes in the same jar:
 
-## On a gamepad
+| Installed on | You get |
+|---|---|
+| Client only | The book, listing the recipes you have unlocked. Sub-crafting chains only through those. |
+| Client and server | Every recipe an advancement can teach, unlocked or not, so sub-crafting chains through all of them. Clicking a recipe you have not unlocked teaches it to you. The brewing stand gets a book. |
+| Singleplayer | The same as client and server. |
 
-The recipe grid is painted rather than built out of widgets, which is right for a few dozen icons and leaves it invisible to anything reading `Screen.children()` - a gamepad navigator would reach the search box, the filter and the pager, and not one recipe.
+A player connecting without the mod gets the vanilla book and is sent nothing. Pandorical is optional; with it on the client, modded crafting stations get the book and the book works with gamepad navigation (see below).
 
-So the screen advertises its slots through Pandorical's `NavigableScreen`, the same channel Pandorical's own screens use, and couch-controls picks them up knowing nothing about this mod. Only the slots actually filled on the page are offered; landing on the empty tail of the last row is landing on nothing. Pandorical stays a suggestion rather than a requirement: the class that names it is separate, and a client without it never constructs that one.
+## Opening it
 
-## What It Does
+Open your inventory, a crafting table or any furnace and click the recipe book button. The vanilla recipe-unlocked toasts no longer appear.
 
-Open your inventory, crafting table, or any furnace and click the recipe book button. Instead of the vanilla recipe book, you'll get a clean interface that actually helps you craft.
+## The recipe list
 
-**The main idea:** If you have the raw materials to make something (even through multiple crafting steps), this mod shows it as craftable and handles the intermediate crafting for you.
+- **Grid-aware** - In your inventory (2x2 grid) you only see recipes that fit there. At a crafting table (3x3) you see everything.
+- **Real craftability** - A recipe counts as craftable when you have the materials, even if intermediate items have to be crafted first.
+- **Coloured by craftability** - Every slot is lit green if you can make it now and dim grey if not. Brightness carries the same message as hue, so it reads for colour-blind players and on a washed-out screen. The filter button matches, and shows a crafting table or a book.
+- **Craftable-only toggle** - Craftable-only is the default; the button under the page arrows switches to the full list. The choice holds for the rest of the session.
+- **Usage order** - Recipes you craft often come first. The counts reset each session.
+- **Search** - Type to filter recipes by name as you type.
+- **One entry per item** - When more than one recipe makes an item, the preview says so ("TNT (1 of 2)") and the arrows by the title step through them. It opens on one you can make now, and Craft uses the one on show.
 
-Install it on your client. In singleplayer, it shows all recipes regardless of unlock status. On a multiplayer server, install it there too and you get the same: the server sends the whole recipe list, so sub-crafting can chain through recipes you have not unlocked yet. On a server without it, the book only knows the recipes you have unlocked, and a chain can only run through those.
+## One-click crafting
 
-## Features
+Want a lantern but only have iron ingots, logs and coal? The book works out the chain (ingots to nuggets, logs to planks to sticks, sticks and coal to torches, then the lantern) and crafts each step in order when you click Craft.
 
-### Smart Recipe Display
+- Sub-crafts use crafting-table recipes only, and a sub-craft never spends the item the plan is making.
+- It warns when the plan needs more free inventory slots than you have.
+- Choose how many with the quantity buttons: `-` / `+` step by one, `--` / `++` by two, and **Max** goes straight to as many as your materials allow.
 
-- **Grid-aware filtering** - In your inventory (2x2 grid), you only see recipes you can actually craft there. At a crafting table (3x3), you see everything.
-- **Real craftability** - Recipes show as craftable when you have the materials, even if you need to craft intermediate items first.
-- **Readable without reading** - Every slot is coloured by whether you can make it right now: lit green for yes, dim grey for not yet. Brightness carries the same message as hue, so it survives colour-blindness and a washed-out TV. The filter button matches, and wears a crafting table or a book, so a child who cannot read the label can still work the screen.
-- **Craftable-only toggle** - Craftable-only is the default; the button under the page arrows switches to the full list. Craftability counts sub-crafting, and the choice sticks until you change it.
-- **Usage tracking** - Recipes you craft frequently appear first (resets each session).
-- **Search** - Type to filter recipes by name in real time.
-- **Deduplication** - One recipe per result item, keeping the list clean. When more than one recipe makes it, the preview says so ("TNT (1 of 2)") and arrows by the title step through them; it opens on one you can make now, and Craft makes it the way that is on show.
-
-### One-Click Complex Crafting
-
-Want to craft a lantern but only have iron ingots, logs, and coal? The mod figures out the full chain - ingots to nuggets, logs to planks to sticks, sticks and coal to torches, then finally the lantern - and handles it all when you click.
-
-- Calculates the full crafting tree automatically
-- Identifies what intermediate items you need to make
-- Executes each crafting step in sequence
-- Sub-crafts use crafting-table recipes only, and a sub-craft never spends the item the plan is making
-- Warns when the plan needs more free inventory slots than you have
-- Choose how many to craft with the quantity selector: `-` / `+` step one at a time, `--` / `++` two at a time, and **Max** goes straight to as many as your materials allow
-
-### Furnace Support
-
-Works with all furnace types, showing only relevant recipes:
-
-- **Furnace** - All smelting recipes
-- **Blast Furnace** - Ores and metal items only
-- **Smoker** - Food items only
-
-For smelting recipes with multiple valid inputs (like Gold Ingot from ore, raw gold, or deepslate ore), the preview shows all options.
-
-### Brewing Stand
-
-With the mod on the server too, the brewing stand gets a book button, and the book lists the brews the server has: what goes in and what comes out. It is for looking up, not filling; the stand is loaded by hand. On a server without the mod there are no brewing recipes to show, so there is no button.
-
-### Modded Crafting Stations
-
-Any Pandorical station screen that declares a recipe book category (fletch-craft's fletching table, for one) gets the book button too, filtered to that category. Craft asks the station to lay the recipe out in its own grid; there is no sub-crafting there.
-
-### Recipe Preview
+## Recipe preview
 
 Click any recipe to see:
 
-- All required ingredients with quantities
-- Color-coded availability (no tint = you have it, yellow = you don't but it has a recipe, red = you don't and nothing makes it)
-- Click ingredients to jump to their recipes
-- Scroll through recipes with many input options
+- Every ingredient with its quantity.
+- Its availability: no tint means you have it, yellow means you do not but something makes it, red means you do not and nothing makes it.
+- Click an ingredient to jump to its recipe.
+- Scroll through recipes with many input options.
 
-### Mod Compatibility
+## Furnaces
 
-- Compatible with Backpack Inventory mod (detects crafting grid size)
+Each furnace shows only its own recipes:
+
+- **Furnace** - all smelting recipes
+- **Blast Furnace** - ores and metal items
+- **Smoker** - food
+
+Furnace recipes are for looking up: the preview shows every valid input (gold ingot from ore, raw gold or deepslate ore, say), and the furnace is loaded by hand.
+
+## Brewing stand
+
+With the mod on the server, the brewing stand gets a book button listing the brews the server has: what goes in and what comes out. Like furnaces, it is for looking up; the stand is loaded by hand. On a server without the mod there is no button.
+
+## Other mods
+
+- **Pandorical crafting stations** - Any Pandorical station screen that declares a recipe book category (fletch-craft's fletching table, for one) gets the book button, filtered to that category. Craft asks the station to lay the recipe out in its own grid; there is no sub-crafting there.
+- **[couch-controls](https://github.com/fatlard1993/couch-controls)** - With Pandorical installed, a gamepad can move between the recipes on the page as well as the search box, filter and pager.
+- **Backpack Inventory** - The book detects its crafting grid size.
 
 ## Development
 
