@@ -1,0 +1,40 @@
+{
+  "demo": {
+    "name": "Smart Recipe Book",
+    "icon": "minecraft:crafting_table",
+    "about": [
+      "A recipe book that shows what you can make from what you are carrying, and crafts the in-between parts for you.",
+      "Place the crafting table, open its recipe book and click a lantern: from logs, coal and iron it makes the planks, sticks, torches and nuggets on the way."
+    ]
+  },
+  "pvp_preset": 1,
+  "needs": ["smart-recipe-book"],
+  "preset": {
+    "name": "Smart Recipe Book",
+    "icon": "minecraft:crafting_table",
+    "pvp": false,
+    "game_mode": "survival",
+    "entry_kit": [
+      {"slot": 0, "item": {"id": "minecraft:crafting_table", "count": 1}},
+      {"slot": 1, "item": {"id": "minecraft:oak_log", "count": 32}},
+      {"slot": 2, "item": {"id": "minecraft:iron_ingot", "count": 16}},
+      {"slot": 3, "item": {"id": "minecraft:coal", "count": 16}},
+      {"slot": 4, "item": {"id": "minecraft:cobblestone", "count": 64}},
+      {"slot": 5, "item": {"id": "minecraft:redstone", "count": 16}},
+      {"slot": 6, "item": {"id": "minecraft:string", "count": 8}},
+      {"slot": 8, "item": {"id": "minecraft:bread", "count": 8}},
+      {"slot": 9, "item": {"id": "minecraft:iron_ingot", "count": 16}},
+      {"slot": 10, "item": {"id": "minecraft:gold_ingot", "count": 8}},
+      {"slot": 11, "item": {"id": "minecraft:oak_log", "count": 32}}
+    ],
+    "respawn_kit": "entry",
+    "goal": "time",
+    "mobs": "off",
+    "life": 15,
+    "size": 2,
+    "world": "overworld",
+    "shape": "flat",
+    "biome": "minecraft:forest",
+    "weather": "clear"
+  }
+}
