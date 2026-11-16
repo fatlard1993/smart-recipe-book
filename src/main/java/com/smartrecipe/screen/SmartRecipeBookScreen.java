@@ -77,6 +77,10 @@ public class SmartRecipeBookScreen extends Screen {
 	private final RecipeMode recipeMode; // CRAFTING or FURNACE
 	private int currentPage = 0;
 	private List<RecipeDisplayEntry> displayedRecipes = new ArrayList<>();
+	/** Each shown recipe's result, resolved once per filter pass rather than per tile per frame. */
+	private final Map<RecipeDisplayEntry, ItemStack> displayedResults = new IdentityHashMap<>();
+	private final ItemStack craftableIcon = new ItemStack(Items.CRAFTING_TABLE);
+	private final ItemStack wholeBookIcon = new ItemStack(Items.BOOK);
 	/**
 	 * Every recipe for each result the list shows, in catalogue order.
 	 *
@@ -373,6 +377,7 @@ public class SmartRecipeBookScreen extends Screen {
 
 	private void applyFilters() {
 		displayedRecipes = new ArrayList<>();
+		displayedResults.clear();
 
 		if (minecraft == null || minecraft.level == null) return;
 
@@ -419,12 +424,12 @@ public class SmartRecipeBookScreen extends Screen {
 			seenItems.add(resultKey);
 
 			displayedRecipes.add(entry);
+			displayedResults.put(entry, resultStack);
 		}
 
-		final ContextMap sortContext = contextParams;
 		displayedRecipes.sort((a, b) -> {
-			Item itemA = a.resultItems(sortContext).get(0).getItem();
-			Item itemB = b.resultItems(sortContext).get(0).getItem();
+			Item itemA = displayedResults.get(a).getItem();
+			Item itemB = displayedResults.get(b).getItem();
 			int countA = getCraftedCount(itemA);
 			int countB = getCraftedCount(itemB);
 			return Integer.compare(countB, countA); // Descending order
@@ -604,7 +609,7 @@ public class SmartRecipeBookScreen extends Screen {
 		// well as a word. A crafting table for "only what I can make", a book for
 		// "the whole book". Drawn after the widget so it sits on top of it.
 		if (craftableToggle != null) {
-			ItemStack toggleIcon = new ItemStack(craftableOnly ? Items.CRAFTING_TABLE : Items.BOOK);
+			ItemStack toggleIcon = craftableOnly ? craftableIcon : wholeBookIcon;
 			context.item(toggleIcon, craftableToggle.getX() + 4, craftableToggle.getY() + 2);
 		}
 
@@ -627,10 +632,7 @@ public class SmartRecipeBookScreen extends Screen {
 			int slotY = gridY + row * (SLOT_SIZE + SLOT_SPACING);
 
 			RecipeDisplayEntry entry = displayedRecipes.get(startIndex + i);
-			List<ItemStack> results = entry.resultItems(contextParams);
-			if (results.isEmpty()) continue;
-
-			ItemStack resultStack = results.get(0);
+			ItemStack resultStack = displayedResults.get(entry);
 
 			boolean hovered = mouseX >= slotX && mouseX < slotX + SLOT_SIZE &&
 							  mouseY >= slotY && mouseY < slotY + SLOT_SIZE;
@@ -679,10 +681,10 @@ public class SmartRecipeBookScreen extends Screen {
 
 		// Draw tooltip for hovered recipe with craftability info
 		if (hoveredRecipe != null) {
-			List<ItemStack> results = hoveredRecipe.resultItems(contextParams);
-			if (!results.isEmpty()) {
+			ItemStack hoveredResult = displayedResults.get(hoveredRecipe);
+			if (hoveredResult != null) {
 				List<Component> tooltip = new ArrayList<>();
-				tooltip.add(results.get(0).getHoverName());
+				tooltip.add(hoveredResult.getHoverName());
 
 				if (recipeMode.isFurnaceType()) {
 					boolean hasIngredient = canSmeltRecipe(hoveredRecipe, contextParams);
