@@ -45,6 +45,24 @@ public class RecipeCache {
 	// Index: result item → recipes that produce it
 	private static Map<Item, List<RecipeDisplayEntry>> recipesByResult = new HashMap<>();
 
+	private static List<RecipeDisplayEntry> craftingRecipes = null;
+	/** Workbench recipes by what they make, in catalogue order: the planner's lookup for sub-crafts. */
+	private static Map<Item, List<RecipeDisplayEntry>> craftingByResult = null;
+	/**
+	 * What each slot resolves to. Identity-keyed: a display lives as long as the recipe holding it,
+	 * and resolving one builds fresh stacks every call (a tag of planks is a dozen of them), which
+	 * the planner does for every ingredient of every recipe it walks. Callers must not mutate the
+	 * stacks handed back.
+	 */
+	private static final Map<SlotDisplay, List<ItemStack>> resolved = new IdentityHashMap<>();
+
+	/** Bumped whenever any recipe list changes, so a screen holding derived state knows to rebuild it. */
+	private static int generation = 0;
+
+	public static int generation() {
+		return generation;
+	}
+
 	/**
 	 * Clear all state. Called on disconnect to prevent stale data across sessions.
 	 */
@@ -169,6 +187,37 @@ public class RecipeCache {
 		cachedCollections = null;
 		cachedByCategory = null;
 		recipesByResult.clear();
+		craftingRecipes = null;
+		craftingByResult = null;
+		resolved.clear();
+		generation++;
+	}
+
+	/** The stacks a slot stands for, resolved once per recipe set. Read-only: the lists are shared. */
+	public static List<ItemStack> resolve(SlotDisplay slot, ContextMap contextParams) {
+		List<ItemStack> stacks = resolved.get(slot);
+		if (stacks == null) {
+			stacks = List.copyOf(slot.resolveForStacks(contextParams));
+			resolved.put(slot, stacks);
+		}
+		return stacks;
+	}
+
+	/** Every workbench recipe whose first result is this item, in catalogue order. */
+	public static List<RecipeDisplayEntry> getCraftingRecipesMaking(Item item, ContextMap contextParams) {
+		if (craftingByResult == null) {
+			Map<Item, List<RecipeDisplayEntry>> index = new HashMap<>();
+			for (RecipeDisplayEntry entry : getCraftingRecipes()) {
+				SlotDisplay result = entry.display() instanceof ShapedCraftingRecipeDisplay shaped
+					? shaped.result() : ((ShapelessCraftingRecipeDisplay) entry.display()).result();
+				List<ItemStack> stacks = resolve(result, contextParams);
+				if (stacks.isEmpty()) continue;
+				index.computeIfAbsent(stacks.get(0).getItem(), k -> new ArrayList<>()).add(entry);
+			}
+			index.replaceAll((k, v) -> List.copyOf(v));
+			craftingByResult = index;
+		}
+		return craftingByResult.getOrDefault(item, List.of());
 	}
 
 	private static void rebuildResultMapping(Level world) {
@@ -243,14 +292,17 @@ public class RecipeCache {
 	 * a station somewhere else.
 	 */
 	public static List<RecipeDisplayEntry> getCraftingRecipes() {
-		return view().stream()
-			.filter(entry -> {
-				RecipeDisplay display = entry.display();
-				return display instanceof ShapedCraftingRecipeDisplay ||
-					   display instanceof ShapelessCraftingRecipeDisplay;
-			})
-			.filter(RecipeCache::isVanillaStation)
-			.collect(Collectors.toList());
+		if (craftingRecipes == null) {
+			craftingRecipes = view().stream()
+				.filter(entry -> {
+					RecipeDisplay display = entry.display();
+					return display instanceof ShapedCraftingRecipeDisplay ||
+						   display instanceof ShapelessCraftingRecipeDisplay;
+				})
+				.filter(RecipeCache::isVanillaStation)
+				.toList();
+		}
+		return craftingRecipes;
 	}
 
 	/**
@@ -323,6 +375,7 @@ public class RecipeCache {
 				OptionalInt.empty(), RecipeBookCategories.CRAFTING_MISC, Optional.empty()));
 		}
 		brewingDisplays = List.copyOf(brewingDisplayById.values());
+		generation++;
 
 		SmartRecipeBookMod.LOGGER.info("Received {} brewing recipes from server", brewing.size());
 	}

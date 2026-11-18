@@ -351,7 +351,9 @@ public class RecipePreviewScreen extends Screen {
 
 		// Use RecipeTreeCalculator to calculate max craftable with sub-crafting support
 		maxCraftable = RecipeTreeCalculator.calculateMaxCraftable(minecraft, recipe.id());
-		SmartRecipeBookMod.LOGGER.debug("Max craftable for {}: {}", resultStack.getHoverName().getString(), maxCraftable);
+		if (SmartRecipeBookMod.LOGGER.isDebugEnabled()) {
+			SmartRecipeBookMod.LOGGER.debug("Max craftable for {}: {}", resultStack.getHoverName().getString(), maxCraftable);
+		}
 
 		// A number chosen against the old maximum has to be brought back inside the new one.
 		// Only adjustQuantity clamped, so a quantity that was legal when it was picked survived
@@ -519,7 +521,7 @@ public class RecipePreviewScreen extends Screen {
 
 			// Draw ingredient
 			SlotDisplay slot = displaySlots.get(i);
-			List<ItemStack> possible = slot.resolveForStacks(contextParams);
+			List<ItemStack> possible = RecipeCache.resolve(slot, contextParams);
 			if (!possible.isEmpty()) {
 				ItemStack ingredientStack = null;
 				for (ItemStack stack : possible) {
@@ -692,7 +694,7 @@ public class RecipePreviewScreen extends Screen {
 
 		for (RecipeDisplayEntry entry : allFurnaceRecipes) {
 			if (entry.display() instanceof FurnaceRecipeDisplay fd) {
-				for (ItemStack stack : fd.ingredient().resolveForStacks(contextParams)) {
+				for (ItemStack stack : RecipeCache.resolve(fd.ingredient(), contextParams)) {
 					if (!stack.isEmpty() && !seenItems.contains(stack.getItem())) {
 						seenItems.add(stack.getItem());
 						allIngredients.add(stack);
@@ -703,7 +705,7 @@ public class RecipePreviewScreen extends Screen {
 
 		// Fallback to current recipe's ingredients if no recipes found
 		if (allIngredients.isEmpty()) {
-			for (ItemStack stack : furnaceDisplay.ingredient().resolveForStacks(contextParams)) {
+			for (ItemStack stack : RecipeCache.resolve(furnaceDisplay.ingredient(), contextParams)) {
 				if (!stack.isEmpty() && !seenItems.contains(stack.getItem())) {
 					seenItems.add(stack.getItem());
 					allIngredients.add(stack);

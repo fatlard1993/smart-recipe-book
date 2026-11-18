@@ -24,18 +24,14 @@ public class RecipeTreeCalculator {
 	/** Main inventory plus hotbar; armour and offhand are no use to a craft. */
 	private static final int INVENTORY_SLOTS = 36;
 
-	/** Keyed by item, holding every recipe that makes it; see {@link #findRecipesForItem}. */
-	private static final Map<Item, List<RecipeDisplayEntry>> recipesForItemCache = new HashMap<>();
-	private static long lastCacheClear = 0;
-
-	// TTL keeps recipe lookups responsive to inventory changes without
-	// rescanning every frame. 5s balances freshness vs. cost.
-	private static final long CACHE_TTL_MS = 5000;
-
 	// Vanilla recipes rarely chain deeper than 3 (e.g., log → plank → stick → item).
 	// Capping here prevents runaway recursion from circular or modded recipe trees.
 	// If this proves too shallow for modpacks, it can be raised.
 	private static final int MAX_RECURSION_DEPTH = 3;
+
+	private static Map<Item, Integer> reachableFor = null;
+	private static int reachableGeneration;
+	private static Set<Item> reachable = Set.of();
 
 	/**
 	 * Calculate a crafting plan for the given recipe
@@ -72,6 +68,7 @@ public class RecipeTreeCalculator {
 		ItemStack resultStack = getResultItem(display, contextParams);
 
 		CraftingPlan plan = new CraftingPlan(recipeId, resultStack);
+		Set<Item> obtainable = reachableFrom(inventory, contextParams);
 
 		boolean success = true;
 		for (int made = 0; made < Math.max(1, quantity); made++) {
@@ -81,7 +78,7 @@ public class RecipeTreeCalculator {
 			Set<Item> visited = new HashSet<>();
 			visited.add(resultStack.getItem());
 			List<CraftingPlan.CraftingStep> steps = new ArrayList<>();
-			if (!calculateDependencies(client, entry, inventory, visited, steps, contextParams, 0)) {
+			if (!calculateDependencies(client, entry, inventory, visited, steps, contextParams, obtainable, 0)) {
 				success = false;
 				break;
 			}
@@ -97,8 +94,10 @@ public class RecipeTreeCalculator {
 			if (plan.getSteps().isEmpty()) plan.addStep(new CraftingPlan.CraftingStep(recipeId, resultStack));
 		}
 
-		SmartRecipeBookMod.LOGGER.debug("Plan for {}: {} steps, canCraft={}",
-			resultStack.getHoverName().getString(), plan.getSteps().size(), plan.canCraft());
+		if (SmartRecipeBookMod.LOGGER.isDebugEnabled()) {
+			SmartRecipeBookMod.LOGGER.debug("Plan for {}: {} steps, canCraft={}",
+				resultStack.getHoverName().getString(), plan.getSteps().size(), plan.canCraft());
+		}
 
 		return plan;
 	}
@@ -113,6 +112,7 @@ public class RecipeTreeCalculator {
 			Set<Item> visited,
 			List<CraftingPlan.CraftingStep> steps,
 			ContextMap contextParams,
+			Set<Item> obtainable,
 			int depth) {
 
 		if (depth > MAX_RECURSION_DEPTH) {
@@ -126,7 +126,7 @@ public class RecipeTreeCalculator {
 		if (ingredients == null) return false;
 
 		for (SlotDisplay slotDisplay : ingredients) {
-			List<ItemStack> possibleStacks = slotDisplay.resolveForStacks(contextParams);
+			List<ItemStack> possibleStacks = RecipeCache.resolve(slotDisplay, contextParams);
 			if (possibleStacks.isEmpty()) continue;
 
 			boolean foundIngredient = false;
@@ -149,7 +149,7 @@ public class RecipeTreeCalculator {
 				}
 
 				// Circular dependency: skip this ingredient option
-				if (visited.contains(neededItem)) continue;
+				if (visited.contains(neededItem) || !obtainable.contains(neededItem)) continue;
 
 				visited.add(neededItem);
 				for (RecipeDisplayEntry subRecipe : findRecipesForItem(neededItem, contextParams, inventory)) {
@@ -157,7 +157,7 @@ public class RecipeTreeCalculator {
 					// turned out not to work would otherwise be left in the plan that ships
 					Map<Item, Integer> attempt = new HashMap<>(inventory);
 					int stepsBefore = steps.size();
-					if (!calculateDependencies(client, subRecipe, attempt, visited, steps, contextParams, depth + 1)) {
+					if (!calculateDependencies(client, subRecipe, attempt, visited, steps, contextParams, obtainable, depth + 1)) {
 						steps.subList(stepsBefore, steps.size()).clear();
 						continue;
 					}
@@ -181,12 +181,61 @@ public class RecipeTreeCalculator {
 		return true;
 	}
 
-	private static void clearCacheIfExpired() {
-		long now = System.currentTimeMillis();
-		if (now - lastCacheClear > CACHE_TTL_MS) {
-			recipesForItemCache.clear();
-			lastCacheClear = now;
+	/**
+	 * Every item this inventory could ever lead to: what is held, and whatever some workbench
+	 * recipe makes out of items already in the set, to a fixpoint.
+	 *
+	 * <p>Quantities, depth and cycles are all ignored, so the set is generous: an item in it may
+	 * still not be makeable, but one outside it certainly is not. That is what lets the search skip
+	 * a dead end without changing an answer. Without it a failed plan - most plans, when the book
+	 * filters to what can be made - walked every option of every tag, through every recipe for
+	 * each, three levels down, before giving up.
+	 *
+	 * <p>Kept for as long as the inventory and the recipes stay the same, which across a filter
+	 * pass is every plan in it.
+	 */
+	private static Set<Item> reachableFrom(Map<Item, Integer> inventory, ContextMap contextParams) {
+		if (inventory.equals(reachableFor) && reachableGeneration == RecipeCache.generation()) {
+			return reachable;
 		}
+
+		Set<Item> found = new HashSet<>();
+		inventory.forEach((item, count) -> { if (count > 0) found.add(item); });
+
+		List<RecipeDisplayEntry> pending = new ArrayList<>(RecipeCache.getCraftingRecipes());
+		while (pending.removeIf(entry -> {
+			Item made = getResultItem(entry.display(), contextParams).getItem();
+			return found.contains(made)
+				|| (allSlotsCoverable(entry.display(), contextParams, found) && found.add(made));
+		})) {
+			// again until a pass adds nothing
+		}
+
+		reachableFor = new HashMap<>(inventory);
+		reachableGeneration = RecipeCache.generation();
+		reachable = found;
+		return found;
+	}
+
+	/** Whether each ingredient slot has an option in the set; a slot that resolves to nothing asks for nothing. */
+	private static boolean allSlotsCoverable(RecipeDisplay display, ContextMap contextParams, Set<Item> found) {
+		List<SlotDisplay> ingredients = getIngredients(display);
+		if (ingredients == null) return false;
+
+		for (SlotDisplay slot : ingredients) {
+			List<ItemStack> options = RecipeCache.resolve(slot, contextParams);
+			if (options.isEmpty()) continue;
+
+			boolean covered = false;
+			for (ItemStack option : options) {
+				if (!option.isEmpty() && found.contains(option.getItem())) {
+					covered = true;
+					break;
+				}
+			}
+			if (!covered) return false;
+		}
+		return true;
 	}
 
 	/**
@@ -199,9 +248,9 @@ public class RecipeTreeCalculator {
 	 * caller now tries them in turn, so an item is uncraftable only when every way to make it is.
 	 *
 	 * <p>Ordered by whether the current simulated inventory can make it outright, which keeps the
-	 * old preference for the shallow answer without letting it be the only answer. The cache is
-	 * the list, not the choice: the list does not depend on what the player is carrying, so it
-	 * cannot go stale the way the choice did.
+	 * old preference for the shallow answer without letting it be the only answer. The list comes
+	 * from {@link RecipeCache}'s index, which changes only when the recipes do; the order is worked
+	 * out per call, because it depends on what the player is carrying.
 	 *
 	 * <p>Workbench recipes only. A sub-craft is carried out in the grid the plan runs in, and a
 	 * station recipe that borrows the crafting display - fletch-craft's plank to three sticks
@@ -210,20 +259,7 @@ public class RecipeTreeCalculator {
 	 */
 	private static List<RecipeDisplayEntry> findRecipesForItem(
 			Item item, ContextMap contextParams, Map<Item, Integer> inventory) {
-		clearCacheIfExpired();
-
-		List<RecipeDisplayEntry> candidates = recipesForItemCache.get(item);
-		if (candidates == null) {
-			candidates = new ArrayList<>();
-			for (var entry : RecipeCache.getCraftingRecipes()) {
-				RecipeDisplay display = entry.display();
-				if (getResultItem(display, contextParams).getItem() == item) {
-					candidates.add(entry);
-				}
-			}
-			recipesForItemCache.put(item, List.copyOf(candidates));
-			candidates = recipesForItemCache.get(item);
-		}
+		List<RecipeDisplayEntry> candidates = RecipeCache.getCraftingRecipesMaking(item, contextParams);
 		if (candidates.size() < 2) return candidates;
 
 		List<RecipeDisplayEntry> ordered = new ArrayList<>(candidates);
@@ -243,7 +279,7 @@ public class RecipeTreeCalculator {
 		Map<Item, Integer> simInventory = new HashMap<>(inventory);
 
 		for (SlotDisplay slot : ingredients) {
-			List<ItemStack> possibleIngredients = slot.resolveForStacks(contextParams);
+			List<ItemStack> possibleIngredients = RecipeCache.resolve(slot, contextParams);
 			if (possibleIngredients.isEmpty()) continue;
 
 			boolean foundIngredient = false;
@@ -289,7 +325,7 @@ public class RecipeTreeCalculator {
 		}
 
 		if (resultSlot != null) {
-			List<ItemStack> stacks = resultSlot.resolveForStacks(contextParams);
+			List<ItemStack> stacks = RecipeCache.resolve(resultSlot, contextParams);
 			if (!stacks.isEmpty()) {
 				return stacks.get(0);
 			}
@@ -391,10 +427,11 @@ public class RecipeTreeCalculator {
 		ContextMap contextParams = SlotDisplayContext.fromLevel(client.level);
 
 		Item result = getResultItem(display, contextParams).getItem();
+		Set<Item> obtainable = reachableFrom(inventory, contextParams);
 		for (int i = 0; i < quantity; i++) {
 			Set<Item> visited = new HashSet<>();
 			visited.add(result);
-			if (!canCraftOnce(client, entry, inventory, visited, contextParams, 0)) {
+			if (!canCraftOnce(client, entry, inventory, visited, contextParams, obtainable, 0)) {
 				return false;
 			}
 		}
@@ -411,6 +448,7 @@ public class RecipeTreeCalculator {
 			Map<Item, Integer> inventory,
 			Set<Item> visited,
 			ContextMap contextParams,
+			Set<Item> obtainable,
 			int depth) {
 
 		if (depth > MAX_RECURSION_DEPTH) return false;
@@ -420,7 +458,7 @@ public class RecipeTreeCalculator {
 		if (ingredients == null) return false;
 
 		for (SlotDisplay slotDisplay : ingredients) {
-			List<ItemStack> possibleStacks = slotDisplay.resolveForStacks(contextParams);
+			List<ItemStack> possibleStacks = RecipeCache.resolve(slotDisplay, contextParams);
 			if (possibleStacks.isEmpty()) continue;
 
 			boolean foundIngredient = false;
@@ -441,14 +479,14 @@ public class RecipeTreeCalculator {
 					break;
 				}
 
-				if (visited.contains(neededItem)) continue;
+				if (visited.contains(neededItem) || !obtainable.contains(neededItem)) continue;
 
 				visited.add(neededItem);
 				for (RecipeDisplayEntry subRecipe : findRecipesForItem(neededItem, contextParams, inventory)) {
 					// On its own copy: a sub-craft that fails half way has already spent things
 					// out of the simulation, and the next candidate must not start from that
 					Map<Item, Integer> attempt = new HashMap<>(inventory);
-					if (!canCraftOnce(client, subRecipe, attempt, visited, contextParams, depth + 1)) {
+					if (!canCraftOnce(client, subRecipe, attempt, visited, contextParams, obtainable, depth + 1)) {
 						continue;
 					}
 					int produced = getResultItem(subRecipe.display(), contextParams).getCount();

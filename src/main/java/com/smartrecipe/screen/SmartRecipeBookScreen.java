@@ -89,11 +89,18 @@ public class SmartRecipeBookScreen extends Screen {
 	 * on the player's behalf; the preview now offers the choice.
 	 */
 	private final Map<Object, List<RecipeDisplayEntry>> recipesByResult = new HashMap<>();
-	private List<RecipeDisplayEntry> allRecipes = new ArrayList<>();
+	/**
+	 * Every recipe this screen can show, with its result and lowercased name, built once per recipe
+	 * set: a search re-filters on every keystroke and must not resolve every result and name again.
+	 */
+	private List<Candidate> candidates = null;
+	private int candidatesGeneration;
+
+	private record Candidate(RecipeDisplayEntry entry, ItemStack result, String name) {}
 	private String searchQuery = "";
 	private Map<Item, Integer> playerInventory = new HashMap<>();
 
-	// Cache for recursive craftability checks (expensive to compute)
+	/** Recursive craftability per recipe, good for as long as {@link #playerInventory} is. */
 	private Map<RecipeDisplayId, Boolean> craftabilityCache = new HashMap<>();
 
 	/**
@@ -242,13 +249,6 @@ public class SmartRecipeBookScreen extends Screen {
 	protected void init() {
 		super.init();
 
-		loadRecipes();
-
-		updateInventory();
-
-		// Clear craftability cache when re-initializing
-		craftabilityCache.clear();
-
 		layout();
 
 		// Search and the filter share the header's second row: a full-width box with the filter
@@ -301,7 +301,8 @@ public class SmartRecipeBookScreen extends Screen {
 		applyFilters();
 	}
 
-	private void loadRecipes() {
+	private List<RecipeDisplayEntry> recipesForMode() {
+		List<RecipeDisplayEntry> allRecipes;
 		switch (recipeMode) {
 			case FURNACE:
 				allRecipes = RecipeCache.getFurnaceRecipes();
@@ -323,6 +324,27 @@ public class SmartRecipeBookScreen extends Screen {
 				allRecipes = RecipeCache.getCraftingRecipes();
 				break;
 		}
+		return allRecipes;
+	}
+
+	private List<Candidate> candidates(ContextMap contextParams) {
+		if (candidates != null && candidatesGeneration == RecipeCache.generation()) return candidates;
+		candidatesGeneration = RecipeCache.generation();
+		craftabilityCache.clear();
+
+		List<Candidate> built = new ArrayList<>();
+		boolean gridBound = recipeMode == RecipeMode.CRAFTING || recipeMode == RecipeMode.STATION;
+		for (RecipeDisplayEntry entry : recipesForMode()) {
+			if (gridBound && !fitsInGrid(entry)) continue;
+
+			List<ItemStack> results = entry.resultItems(contextParams);
+			if (results.isEmpty() || results.get(0).isEmpty()) continue;
+
+			ItemStack result = results.get(0);
+			built.add(new Candidate(entry, result, result.getHoverName().getString().toLowerCase()));
+		}
+		candidates = built;
+		return built;
 	}
 
 	/**
@@ -331,7 +353,6 @@ public class SmartRecipeBookScreen extends Screen {
 	 */
 	public void refresh() {
 		updateInventory();
-		craftabilityCache.clear();
 		applyFilters();
 	}
 
@@ -342,9 +363,17 @@ public class SmartRecipeBookScreen extends Screen {
 		return CraftCountTracker.getCount(item);
 	}
 
+	/**
+	 * Re-reads the inventory, and forgets the craftability answers when it changed. Brewing turns
+	 * on which potion is held, which an item count cannot see, so its answers are always dropped.
+	 */
 	private void updateInventory() {
 		if (minecraft != null && minecraft.player != null) {
-			playerInventory = RecipeTreeCalculator.getInventoryContents(minecraft.player);
+			Map<Item, Integer> now = RecipeTreeCalculator.getInventoryContents(minecraft.player);
+			if (recipeMode == RecipeMode.BREWING || !now.equals(playerInventory)) {
+				craftabilityCache.clear();
+			}
+			playerInventory = now;
 		}
 	}
 
@@ -388,21 +417,11 @@ public class SmartRecipeBookScreen extends Screen {
 		Set<Object> seenItems = new HashSet<>();
 		recipesByResult.clear();
 
-		for (RecipeDisplayEntry entry : allRecipes) {
-			// Check if recipe fits current crafting grid (only for crafting mode)
-			if ((recipeMode == RecipeMode.CRAFTING || recipeMode == RecipeMode.STATION)
-				&& !fitsInGrid(entry)) {
-				continue;
-			}
+		for (Candidate candidate : candidates(contextParams)) {
+			RecipeDisplayEntry entry = candidate.entry();
+			ItemStack resultStack = candidate.result();
 
-			List<ItemStack> results = entry.resultItems(contextParams);
-			if (results.isEmpty() || results.get(0).isEmpty()) continue;
-
-			ItemStack resultStack = results.get(0);
-			Item resultItem = resultStack.getItem();
-			String itemName = resultStack.getHoverName().getString().toLowerCase();
-
-			if (!searchQuery.isEmpty() && !itemName.contains(searchQuery)) {
+			if (!searchQuery.isEmpty() && !candidate.name().contains(searchQuery)) {
 				continue;
 			}
 
@@ -736,9 +755,9 @@ public class SmartRecipeBookScreen extends Screen {
 		if (minecraft == null || minecraft.level == null) return;
 
 		ContextMap contextParams = SlotDisplayContext.fromLevel(minecraft.level);
-		List<ItemStack> results = entry.resultItems(contextParams);
-		List<RecipeDisplayEntry> choices = results.isEmpty() ? List.of(entry)
-			: recipesByResult.getOrDefault(dedupeKey(results.get(0)), List.of(entry));
+		ItemStack result = displayedResults.get(entry);
+		List<RecipeDisplayEntry> choices = result == null ? List.of(entry)
+			: recipesByResult.getOrDefault(dedupeKey(result), List.of(entry));
 
 		// Open on one that can be made now, so the ordinary case is still a single click: the tile's
 		// own recipe when it can, else the first that can, else the tile's.
