@@ -3,6 +3,9 @@
     "Replaces the game's recipe book with one that searches properly and crafts the intermediate parts for you, so a thing you want is a click rather than a dig through lists."
   ],
   "versions": {
+    "1.2.11": [
+      "The mods that do the same job are listed as conflicts, so the loader says so at startup, and the readme says why."
+    ],
     "1.2.10": [
       "The recipe book opens in milliseconds, not seconds."
     ],
