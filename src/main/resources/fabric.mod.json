@@ -28,6 +28,10 @@
 	"suggests": {
 		"pandorical": "*"
 	},
+	"conflicts": {
+		"emi": "*",
+		"roughlyenoughitems": "*"
+	},
 	"custom": {
 		"modmenu": {
 			"links": {

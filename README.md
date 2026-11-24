@@ -65,6 +65,10 @@ With the mod on the server, the brewing stand gets a book button listing the bre
 - **[couch-controls](https://github.com/fatlard1993/couch-controls)** - With Pandorical installed, a gamepad can move between the recipes on the page as well as the search box, filter and pager.
 - **Backpack Inventory** - The book detects its crafting grid size.
 
+## Works with other mods
+
+EMI and REI replace the recipe book too, so with either installed the two would fight over it; its manifest lists them as conflicts, so the loader says so at startup.
+
 ## Development
 
 Installing and building are in [DEVELOPMENT.md](DEVELOPMENT.md).
